@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/src/server.js",
+    "start": "node -e \"console.log('ENV KEYS:', Object.keys(process.env).filter(k => !k.startsWith('npm_')).sort().join(', '))\" && node dist/src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
