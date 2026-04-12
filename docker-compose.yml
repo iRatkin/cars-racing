@@ -4,6 +4,7 @@ services:
   api:
     build:
       context: .
+      dockerfile: Dockerfile.local
     environment:
       BOT_TOKEN: ${BOT_TOKEN:-123456:test-token}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
