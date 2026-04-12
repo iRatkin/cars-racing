@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { MongoClient } from "mongodb";
 
 import { loadConfigFromEnv } from "./config/config.js";

@@ -31,4 +31,18 @@ describe("health endpoint", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
   });
+
+  it("sets Access-Control-Allow-Origin to *", async () => {
+    const app = buildApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: {
+        origin: "https://example.com"
+      }
+    });
+
+    expect(response.headers["access-control-allow-origin"]).toBe("*");
+  });
 });

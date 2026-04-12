@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -54,6 +55,10 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
   } = dependencies;
   const app = Fastify({
     logger: Boolean(config)
+  });
+
+  app.register(cors, {
+    origin: "*"
   });
 
   if (config) {
