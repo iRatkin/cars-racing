@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INIT_DATA=$(cat "$SCRIPT_DIR/../initData.txt")
+
+RESPONSE=$(curl -s -X POST http://localhost:3000/v1/auth/telegram \
+  -H "Content-Type: application/json" \
+  -d "{\"initData\": \"$INIT_DATA\"}")
+
+echo "$RESPONSE" | python3 -m json.tool
+
+TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['accessToken'])" 2>/dev/null)
+if [ -n "$TOKEN" ]; then
+  echo "$TOKEN" > "$SCRIPT_DIR/../token.txt"
+  echo ""
+  echo "Token saved to fixtures/token.txt"
+fi

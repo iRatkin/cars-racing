@@ -33,7 +33,7 @@ export interface MongoPurchasesRepositoryOptions {
 
 export interface PurchasesCollection {
   findOne(
-    filter: { userId: string; bundleId: string; isActiveIntent: true }
+    filter: Record<string, unknown>
   ): Promise<WithId<MongoPurchaseDocument> | MongoPurchaseDocument | null>;
   insertOne(document: MongoPurchaseDocument): Promise<unknown>;
   updateOne(filter: { purchaseId: string }, update: Record<string, unknown>): Promise<unknown>;
@@ -86,6 +86,11 @@ export class MongoPurchasesRepository implements PurchasesRepository {
     return mapPurchaseDocument(document);
   }
 
+  async findByInvoicePayload(invoicePayload: string): Promise<PurchaseIntentRecord | null> {
+    const document = await this.collection.findOne({ invoicePayload });
+    return document ? mapPurchaseDocument(document) : null;
+  }
+
   async setInvoiceUrl(purchaseId: string, invoiceUrl: string): Promise<void> {
     await this.collection.updateOne(
       { purchaseId },
@@ -93,6 +98,32 @@ export class MongoPurchasesRepository implements PurchasesRepository {
         $set: {
           invoiceUrl,
           status: "invoice_ready",
+          updatedAt: new Date()
+        }
+      }
+    );
+  }
+
+  async updateStatus(purchaseId: string, status: PurchaseStatus): Promise<void> {
+    await this.collection.updateOne(
+      { purchaseId },
+      {
+        $set: {
+          status,
+          updatedAt: new Date()
+        }
+      }
+    );
+  }
+
+  async markGranted(purchaseId: string, telegramPaymentChargeId: string): Promise<void> {
+    await this.collection.updateOne(
+      { purchaseId },
+      {
+        $set: {
+          status: "granted" as PurchaseStatus,
+          isActiveIntent: false,
+          telegramPaymentChargeId,
           updatedAt: new Date()
         }
       }

@@ -27,7 +27,10 @@ export interface PurchasesRepository {
     userId: string;
     bundleId: string;
   }): Promise<PurchaseIntentRecord | null>;
+  findByInvoicePayload(invoicePayload: string): Promise<PurchaseIntentRecord | null>;
   createIntent(input: CreatePurchaseIntentInput): Promise<PurchaseIntentRecord>;
   setInvoiceUrl(purchaseId: string, invoiceUrl: string): Promise<void>;
+  updateStatus(purchaseId: string, status: PurchaseStatus): Promise<void>;
+  markGranted(purchaseId: string, telegramPaymentChargeId: string): Promise<void>;
   expireIntent(purchaseId: string): Promise<void>;
 }

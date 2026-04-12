@@ -14,6 +14,7 @@ import {
   createTelegramInvoiceLink,
   type TelegramFetch
 } from "./modules/telegram/invoice-link.js";
+import { createWebhookHandler } from "./modules/telegram/webhook-handler.js";
 
 export interface MongoCollectionFactory {
   collection<TSchema extends Document = Document>(name: string): Collection<TSchema>;
@@ -34,19 +35,23 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
     input.db.collection<MongoPurchaseDocument>("purchases")
   );
 
+  const telegramOptions = {
+    botToken: input.config.botToken,
+    fetchImpl: input.fetchImpl
+  };
+
+  const webhookHandler = createWebhookHandler({
+    purchasesRepository,
+    usersRepository,
+    telegramOptions
+  });
+
   return buildApp({
     config: input.config,
     usersRepository,
     purchasesRepository,
     createInvoiceLink: (invoiceInput) =>
-      createTelegramInvoiceLink(
-        { botToken: input.config.botToken, fetchImpl: input.fetchImpl },
-        invoiceInput
-      ),
-    handleTelegramWebhook: input.handleTelegramWebhook ?? ignoreTelegramWebhook
+      createTelegramInvoiceLink(telegramOptions, invoiceInput),
+    handleTelegramWebhook: input.handleTelegramWebhook ?? webhookHandler
   });
-}
-
-async function ignoreTelegramWebhook(): Promise<void> {
-  return undefined;
 }

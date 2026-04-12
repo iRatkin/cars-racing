@@ -95,10 +95,57 @@ export async function createTelegramInvoiceLink(
   return responseBody.result;
 }
 
+export async function answerPreCheckoutQuery(
+  options: TelegramInvoiceLinkClientOptions,
+  preCheckoutQueryId: string,
+  ok: boolean,
+  errorMessage?: string
+): Promise<void> {
+  const fetchImpl = options.fetchImpl ?? defaultTelegramFetch;
+  const body: Record<string, unknown> = {
+    pre_checkout_query_id: preCheckoutQueryId,
+    ok
+  };
+  if (!ok && errorMessage) {
+    body.error_message = errorMessage;
+  }
+
+  const response = await fetchImpl(
+    `https://api.telegram.org/bot${options.botToken}/answerPreCheckoutQuery`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+
+  let responseBody: TelegramApiResponse;
+  try {
+    responseBody = await response.json() as TelegramApiResponse;
+  } catch {
+    throw new Error(
+      `Telegram answerPreCheckoutQuery failed: HTTP ${response.status} (non-JSON response)`
+    );
+  }
+
+  if (!response.ok || !responseBody.ok) {
+    throw new Error(
+      `Telegram answerPreCheckoutQuery failed: ${
+        responseBody.description ?? `HTTP ${response.status}`
+      }`
+    );
+  }
+}
+
 const defaultTelegramFetch: TelegramFetch = (input, init) => fetch(input, init);
 
 interface TelegramCreateInvoiceLinkResponse {
   ok: boolean;
   result?: string;
+  description?: string;
+}
+
+interface TelegramApiResponse {
+  ok: boolean;
   description?: string;
 }

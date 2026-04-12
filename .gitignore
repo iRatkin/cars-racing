@@ -12,3 +12,5 @@
 /old
 /deprecated
 /temp
+/fixtures/initData.txt
+/fixtures/token.txt

@@ -132,16 +132,26 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
         }))
       );
 
-      return reply.send({
+      const garageResponse = {
         ...garage,
         raceCoinsBalance: user.raceCoinsBalance ?? 0
-      });
+      };
+
+      if (appConfig.env === "dev") {
+        request.log.info({ garageResponse }, "garage response");
+      }
+
+      return reply.send(garageResponse);
     });
 
     app.post("/v1/auth/telegram", async (request, reply) => {
       const parsedBody = telegramAuthBodySchema.safeParse(request.body);
       if (!parsedBody.success) {
         return reply.code(400).send({ code: "INIT_DATA_REQUIRED" });
+      }
+
+      if (appConfig.env === "dev") {
+        request.log.info({ initData: parsedBody.data.initData }, "auth initData received");
       }
 
       try {
@@ -177,7 +187,7 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           }
         );
 
-        return reply.send({
+        const responseBody = {
           accessToken,
           expiresInSec: 43200,
           profile: {
@@ -189,7 +199,13 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
             garageRevision: starterState.garageRevision,
             raceCoinsBalance: user.raceCoinsBalance ?? 0
           }
-        });
+        };
+
+        if (appConfig.env === "dev") {
+          request.log.info({ responseBody }, "auth response");
+        }
+
+        return reply.send(responseBody);
       } catch (error) {
         if (error instanceof TelegramInitDataValidationError) {
           return reply.code(401).send({ code: "INIT_DATA_INVALID" });
@@ -201,6 +217,10 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
 
     if (purchasesRepository && createInvoiceLink) {
       app.post("/v1/purchases/coins-intents", async (request, reply) => {
+        if (appConfig.env === "dev") {
+          request.log.info({ body: request.body }, "coins-intents request body");
+        }
+
         const tokenPayload = await verifyJwtOrReject(request, reply);
         if (!tokenPayload) {
           return;
@@ -213,6 +233,9 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
 
         const bundle = getBundleById(parsedBody.data.bundleId);
         if (!bundle) {
+          if (appConfig.env === "dev") {
+            request.log.warn({ bundleId: parsedBody.data.bundleId }, "bundle not found");
+          }
           return reply.code(404).send({ code: "BUNDLE_NOT_FOUND" });
         }
 
