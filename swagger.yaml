@@ -1,0 +1,397 @@
+openapi: 3.0.3
+info:
+  title: Telegram Miniapp Cars API
+  version: 0.1.0
+  description: API for Telegram Mini App authentication, garage state, car purchase intents, and Telegram payment webhooks.
+servers:
+  - url: http://localhost:3000
+    description: Local Docker Compose API
+tags:
+  - name: Health
+  - name: Auth
+  - name: Garage
+  - name: Purchases
+  - name: Telegram
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Check API health
+      operationId: getHealth
+      responses:
+        "200":
+          description: API is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/auth/telegram:
+    post:
+      tags:
+        - Auth
+      summary: Authenticate a Telegram Mini App user
+      operationId: authenticateTelegramUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramAuthRequest"
+      responses:
+        "200":
+          description: Authentication succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelegramAuthResponse"
+        "400":
+          description: initData is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                initDataRequired:
+                  value:
+                    code: INIT_DATA_REQUIRED
+        "401":
+          description: Telegram init data is invalid or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                initDataInvalid:
+                  value:
+                    code: INIT_DATA_INVALID
+  /v1/garage:
+    get:
+      tags:
+        - Garage
+      summary: Get the authenticated user's garage
+      operationId: getGarage
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Garage state with active catalog cars.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GarageResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                unauthorized:
+                  value:
+                    code: UNAUTHORIZED
+        "404":
+          description: The authenticated user no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                userNotFound:
+                  value:
+                    code: USER_NOT_FOUND
+  /v1/purchases/car-intents:
+    post:
+      tags:
+        - Purchases
+      summary: Create or reuse a car purchase intent
+      operationId: createCarPurchaseIntent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCarPurchaseIntentRequest"
+      responses:
+        "200":
+          description: Invoice-ready purchase intent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseIntentResponse"
+        "400":
+          description: carId is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                carIdRequired:
+                  value:
+                    code: CAR_ID_REQUIRED
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                unauthorized:
+                  value:
+                    code: UNAUTHORIZED
+        "404":
+          description: User or car was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                carNotFound:
+                  value:
+                    code: CAR_NOT_FOUND
+        "409":
+          description: User already owns the requested car.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                alreadyOwned:
+                  value:
+                    code: CAR_ALREADY_OWNED
+        "422":
+          description: Requested car cannot be purchased.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notPurchasable:
+                  value:
+                    code: CAR_NOT_PURCHASABLE
+  /v1/telegram/webhook:
+    post:
+      tags:
+        - Telegram
+      summary: Receive Telegram Bot API webhook updates
+      operationId: receiveTelegramWebhook
+      security:
+        - telegramWebhookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Update was accepted by the webhook handler.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          description: Telegram webhook secret header is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidSecret:
+                  value:
+                    code: INVALID_WEBHOOK_SECRET
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    telegramWebhookSecret:
+      type: apiKey
+      in: header
+      name: x-telegram-bot-api-secret-token
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          example: true
+    OkResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          example: true
+    ErrorResponse:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+          enum:
+            - INIT_DATA_REQUIRED
+            - INIT_DATA_INVALID
+            - UNAUTHORIZED
+            - USER_NOT_FOUND
+            - CAR_ID_REQUIRED
+            - CAR_NOT_FOUND
+            - CAR_NOT_PURCHASABLE
+            - CAR_ALREADY_OWNED
+            - INVALID_WEBHOOK_SECRET
+    TelegramAuthRequest:
+      type: object
+      required:
+        - initData
+      properties:
+        initData:
+          type: string
+          minLength: 1
+          description: Raw Telegram Mini App initData query string.
+    TelegramAuthResponse:
+      type: object
+      required:
+        - accessToken
+        - expiresInSec
+        - profile
+      properties:
+        accessToken:
+          type: string
+          description: JWT bearer token for API requests.
+        expiresInSec:
+          type: integer
+          example: 43200
+        profile:
+          $ref: "#/components/schemas/UserProfile"
+    UserProfile:
+      type: object
+      required:
+        - userId
+        - telegramUserId
+        - ownedCarIds
+        - garageRevision
+      properties:
+        userId:
+          type: string
+          example: usr_123456789
+        telegramUserId:
+          type: string
+          example: "123456789"
+        firstName:
+          type: string
+          nullable: true
+          example: Ivan
+        username:
+          type: string
+          nullable: true
+          example: ivan_dev
+        ownedCarIds:
+          type: array
+          items:
+            type: string
+          example:
+            - starter_car
+        garageRevision:
+          type: integer
+          example: 1
+    GarageResponse:
+      type: object
+      required:
+        - garageRevision
+        - cars
+      properties:
+        garageRevision:
+          type: integer
+          example: 1
+        cars:
+          type: array
+          items:
+            $ref: "#/components/schemas/GarageCar"
+    GarageCar:
+      type: object
+      required:
+        - carId
+        - title
+        - owned
+        - price
+        - canBuy
+      properties:
+        carId:
+          type: string
+          example: second_car
+        title:
+          type: string
+          example: Second Car
+        owned:
+          type: boolean
+          example: false
+        price:
+          $ref: "#/components/schemas/StarsPrice"
+        canBuy:
+          type: boolean
+          example: true
+    StarsPrice:
+      type: object
+      required:
+        - currency
+        - amount
+      properties:
+        currency:
+          type: string
+          enum:
+            - XTR
+        amount:
+          type: integer
+          minimum: 0
+          example: 250
+    CreateCarPurchaseIntentRequest:
+      type: object
+      required:
+        - carId
+      properties:
+        carId:
+          type: string
+          minLength: 1
+          example: second_car
+    PurchaseIntentResponse:
+      type: object
+      required:
+        - purchaseId
+        - status
+        - expiresAt
+        - price
+      properties:
+        purchaseId:
+          type: string
+          example: pur_1
+        status:
+          type: string
+          enum:
+            - created
+            - invoice_ready
+            - pre_checkout_approved
+            - paid
+            - granted
+            - cancelled
+            - expired
+            - failed
+          example: invoice_ready
+        invoiceUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: https://t.me/invoice/pur_1
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2026-04-10T10:15:00.000Z"
+        price:
+          $ref: "#/components/schemas/StarsPrice"
