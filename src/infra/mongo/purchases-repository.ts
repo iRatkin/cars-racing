@@ -12,7 +12,7 @@ export interface MongoPurchaseDocument {
   purchaseId: string;
   userId: string;
   telegramUserId: string;
-  carId: string;
+  bundleId: string;
   status: PurchaseStatus;
   isActiveIntent: boolean;
   invoicePayload: string;
@@ -21,6 +21,7 @@ export interface MongoPurchaseDocument {
     currency: "XTR";
     amount: number;
   };
+  coinsAmount: number;
   expiresAt: Date;
   createdAt?: Date;
   updatedAt?: Date;
@@ -32,7 +33,7 @@ export interface MongoPurchasesRepositoryOptions {
 
 export interface PurchasesCollection {
   findOne(
-    filter: { userId: string; carId: string; isActiveIntent: true }
+    filter: { userId: string; bundleId: string; isActiveIntent: true }
   ): Promise<WithId<MongoPurchaseDocument> | MongoPurchaseDocument | null>;
   insertOne(document: MongoPurchaseDocument): Promise<unknown>;
   updateOne(filter: { purchaseId: string }, update: Record<string, unknown>): Promise<unknown>;
@@ -50,11 +51,11 @@ export class MongoPurchasesRepository implements PurchasesRepository {
 
   async findActiveIntent(input: {
     userId: string;
-    carId: string;
+    bundleId: string;
   }): Promise<PurchaseIntentRecord | null> {
     const document = await this.collection.findOne({
       userId: input.userId,
-      carId: input.carId,
+      bundleId: input.bundleId,
       isActiveIntent: true
     });
 
@@ -70,11 +71,12 @@ export class MongoPurchasesRepository implements PurchasesRepository {
       purchaseId,
       userId: input.userId,
       telegramUserId: input.telegramUserId,
-      carId: input.carId,
+      bundleId: input.bundleId,
       status: "invoice_ready",
       isActiveIntent: true,
       invoicePayload: purchaseId,
       priceSnapshot: input.priceSnapshot,
+      coinsAmount: input.coinsAmount,
       expiresAt: input.expiresAt,
       createdAt: now,
       updatedAt: now
@@ -118,7 +120,7 @@ function mapPurchaseDocument(
     purchaseId: document.purchaseId,
     userId: document.userId,
     telegramUserId: document.telegramUserId,
-    carId: document.carId,
+    bundleId: document.bundleId,
     status: document.status,
     isActiveIntent: document.isActiveIntent,
     invoicePayload: document.invoicePayload,
@@ -127,6 +129,7 @@ function mapPurchaseDocument(
       currency: document.priceSnapshot.currency,
       amount: document.priceSnapshot.amount
     },
+    coinsAmount: document.coinsAmount,
     expiresAt: document.expiresAt
   };
 }

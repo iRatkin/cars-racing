@@ -18,6 +18,7 @@ export interface MongoUserDocument {
   ownedCarIds: string[];
   selectedCarId?: string | null;
   garageRevision: number;
+  raceCoinsBalance: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -25,12 +26,12 @@ export interface MongoUserDocument {
 export interface UsersCollection {
   findOne(filter: { userId: string }): Promise<WithId<MongoUserDocument> | MongoUserDocument | null>;
   findOneAndUpdate(
-    filter: { telegramUserId: string },
+    filter: Record<string, unknown>,
     update: Record<string, unknown>,
     options: {
       includeResultMetadata: false;
       returnDocument: "after";
-      upsert: true;
+      upsert?: boolean;
     }
   ): Promise<WithId<MongoUserDocument> | MongoUserDocument | null>;
 }
@@ -58,6 +59,7 @@ export class MongoUsersRepository implements UsersRepository {
           ownedCarIds: [],
           selectedCarId: null,
           garageRevision: 0,
+          raceCoinsBalance: 0,
           createdAt: now
         }
       },
@@ -79,6 +81,38 @@ export class MongoUsersRepository implements UsersRepository {
     const document = await this.collection.findOne({ userId });
     return document ? mapUserDocument(document) : null;
   }
+
+  async addRaceCoins(userId: string, amount: number): Promise<AppUser> {
+    const document = await this.collection.findOneAndUpdate(
+      { userId },
+      { $inc: { raceCoinsBalance: amount }, $set: { updatedAt: new Date() } },
+      { includeResultMetadata: false, returnDocument: "after" }
+    );
+    if (!document) throw new Error("User not found for addRaceCoins");
+    return mapUserDocument(document);
+  }
+
+  async spendRaceCoins(userId: string, amount: number): Promise<AppUser | null> {
+    const document = await this.collection.findOneAndUpdate(
+      { userId, raceCoinsBalance: { $gte: amount } },
+      { $inc: { raceCoinsBalance: -amount }, $set: { updatedAt: new Date() } },
+      { includeResultMetadata: false, returnDocument: "after" }
+    );
+    return document ? mapUserDocument(document) : null;
+  }
+
+  async addOwnedCar(userId: string, carId: string): Promise<AppUser | null> {
+    const document = await this.collection.findOneAndUpdate(
+      { userId },
+      {
+        $addToSet: { ownedCarIds: carId },
+        $inc: { garageRevision: 1 },
+        $set: { updatedAt: new Date() }
+      },
+      { includeResultMetadata: false, returnDocument: "after" }
+    );
+    return document ? mapUserDocument(document) : null;
+  }
 }
 
 export function buildUserId(telegramUserId: string): string {
@@ -97,6 +131,7 @@ function mapUserDocument(document: WithId<MongoUserDocument> | MongoUserDocument
     photoUrl: document.photoUrl,
     ownedCarIds: [...(document.ownedCarIds ?? [])],
     selectedCarId: document.selectedCarId,
-    garageRevision: document.garageRevision
+    garageRevision: document.garageRevision,
+    raceCoinsBalance: document.raceCoinsBalance ?? 0
   };
 }

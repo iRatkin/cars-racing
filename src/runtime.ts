@@ -40,10 +40,7 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
     purchasesRepository,
     createInvoiceLink: (invoiceInput) =>
       createTelegramInvoiceLink(
-        {
-          botToken: input.config.botToken,
-          fetchImpl: input.fetchImpl
-        },
+        { botToken: input.config.botToken, fetchImpl: input.fetchImpl },
         invoiceInput
       ),
     handleTelegramWebhook: input.handleTelegramWebhook ?? ignoreTelegramWebhook

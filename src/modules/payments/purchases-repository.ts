@@ -4,7 +4,7 @@ export interface PurchaseIntentRecord {
   purchaseId: string;
   userId: string;
   telegramUserId: string;
-  carId: string;
+  bundleId: string;
   status: PurchaseStatus;
   isActiveIntent: boolean;
   invoicePayload: string;
@@ -13,6 +13,7 @@ export interface PurchaseIntentRecord {
     currency: "XTR";
     amount: number;
   };
+  coinsAmount: number;
   expiresAt: Date;
 }
 
@@ -24,7 +25,7 @@ export type CreatePurchaseIntentInput = Omit<
 export interface PurchasesRepository {
   findActiveIntent(input: {
     userId: string;
-    carId: string;
+    bundleId: string;
   }): Promise<PurchaseIntentRecord | null>;
   createIntent(input: CreatePurchaseIntentInput): Promise<PurchaseIntentRecord>;
   setInvoiceUrl(purchaseId: string, invoiceUrl: string): Promise<void>;

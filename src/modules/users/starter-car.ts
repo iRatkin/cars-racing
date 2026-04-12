@@ -1,4 +1,4 @@
-export const STARTER_CAR_ID = "starter_car" as const;
+export const STARTER_CAR_ID = "car0" as const;
 
 export interface StarterCarStateInput {
   ownedCarIds: ReadonlyArray<string>;

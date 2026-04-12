@@ -4,16 +4,17 @@ This file is optimized for future coding agents. Prefer it over rediscovering th
 
 ## System Intent
 
-Build a Phase 0 Telegram Mini App backend for a simple cars game/shop.
+Build a Phase 0 Telegram Mini App backend for a simple cars game/shop with an internal **race coins** currency.
 
 Target behavior:
 - Telegram Mini App sends signed `initData`.
 - API validates `initData` with `BOT_TOKEN`.
 - API creates or updates an app user.
 - User always sees a starter car.
-- User can view garage/catalog state.
-- User can create a Telegram Stars purchase intent for `second_car`.
-- API asks Telegram Bot API for an invoice link.
+- User can view garage/catalog state and their race coins balance.
+- User can purchase race coins bundles for Telegram Stars via invoice flow.
+- User can buy cars with race coins (no Telegram Stars involved).
+- API asks Telegram Bot API for an invoice link when purchasing race coins bundles.
 - Telegram can POST payment webhook updates to the backend.
 - MongoDB is the persistence layer.
 
@@ -30,10 +31,10 @@ Runtime exists and starts:
 Important current limitation:
 - `POST /v1/telegram/webhook` is wired at runtime with a default no-op handler in `src/runtime.ts`.
 - Domain validation helpers for Telegram webhook updates exist in `src/modules/telegram/webhook-domain.ts`.
-- There is not yet a real payment-processing handler that approves pre-checkout, marks purchases paid/granted, or adds the purchased car to the user.
+- There is not yet a real payment-processing handler that approves pre-checkout, marks purchases paid/granted, or adds race coins to the user.
 
 Starter car detail:
-- Users are inserted into Mongo with `ownedCarIds: []` and `garageRevision: 0`.
+- Users are inserted into Mongo with `ownedCarIds: []`, `garageRevision: 0`, and `raceCoinsBalance: 0`.
 - Routes call `ensureStarterCarState()` and return derived starter ownership.
 - Current routes do not persist that derived starter state back to Mongo.
 
@@ -126,12 +127,14 @@ Implemented routes:
 - `GET /health`
 - `POST /v1/auth/telegram`
 - `GET /v1/garage`
-- `POST /v1/purchases/car-intents`
+- `POST /v1/purchases/coins-intents`
+- `POST /v1/purchases/buy-car`
 - `POST /v1/telegram/webhook`
 
 Auth:
 - `GET /v1/garage` requires `Authorization: Bearer <jwt>`.
-- `POST /v1/purchases/car-intents` requires `Authorization: Bearer <jwt>`.
+- `POST /v1/purchases/coins-intents` requires `Authorization: Bearer <jwt>`.
+- `POST /v1/purchases/buy-car` requires `Authorization: Bearer <jwt>`.
 - Telegram webhook requires `x-telegram-bot-api-secret-token`.
 
 Common error codes are documented in `swagger.yaml`.
@@ -152,7 +155,8 @@ Mongo:
 Domain:
 - `src/modules/auth/telegram-init-data.ts`: Telegram Mini App initData validation.
 - `src/modules/users/starter-car.ts`: derived starter car state.
-- `src/modules/cars-catalog/cars-catalog.ts`: hardcoded Phase 0 catalog.
+- `src/modules/cars-catalog/cars-catalog.ts`: hardcoded Phase 0 car catalog with prices in race coins (RC).
+- `src/modules/race-coins/race-coins-catalog.ts`: race coins bundles available for purchase with Telegram Stars.
 - `src/modules/garage/garage-view.ts`: garage projection.
 - `src/modules/payments/purchase-domain.ts`: purchase retry/grant decisions.
 - `src/modules/payments/purchases-repository.ts`: purchase repository interface.
@@ -191,18 +195,20 @@ User document shape, see `MongoUserDocument`:
 - `ownedCarIds`
 - `selectedCarId`
 - `garageRevision`
+- `raceCoinsBalance`
 - timestamps
 
 Purchase document shape, see `MongoPurchaseDocument`:
 - `purchaseId`
 - `userId`
 - `telegramUserId`
-- `carId`
+- `bundleId`
 - `status`
 - `isActiveIntent`
 - `invoicePayload`
 - optional `invoiceUrl`
 - `priceSnapshot`
+- `coinsAmount`
 - `expiresAt`
 - timestamps
 
@@ -217,23 +223,32 @@ Current purchase IDs:
 - Validates Telegram signature and max age.
 - Upserts user by Telegram ID.
 - Signs JWT for 12 hours.
-- Returns profile with derived starter car state.
+- Returns profile with derived starter car state and `raceCoinsBalance`.
 
 `GET /v1/garage`:
 - Verifies JWT.
 - Loads user by `sub`.
-- Returns active catalog cars with `owned` and `canBuy`.
+- Returns active catalog cars with `owned` and `canBuy`, plus `raceCoinsBalance`.
 - Uses derived starter state.
 
-`POST /v1/purchases/car-intents`:
+`POST /v1/purchases/coins-intents`:
+- Verifies JWT.
+- Body: `{ "bundleId": string }`
+- Validates bundleId against race coins catalog.
+- Reuses an active unexpired intent for the same user/bundle.
+- Expires stale active intent before creating a new one.
+- Creates a Mongo purchase intent with `bundleId` and `coinsAmount`.
+- Calls Telegram `createInvoiceLink` with bundle invoice data.
+- Stores returned `invoiceUrl`.
+- Returns `{ purchaseId, status, invoiceUrl, expiresAt, price, coinsAmount }`.
+
+`POST /v1/purchases/buy-car`:
 - Verifies JWT.
 - Body: `{ "carId": string }`
-- Only `second_car` is purchasable in Phase 0.
-- Reuses an active unexpired intent for the same user/car.
-- Expires stale active intent before creating a new one.
-- Creates a Mongo purchase intent.
-- Calls Telegram `createInvoiceLink`.
-- Stores returned `invoiceUrl`.
+- Validates car exists and is purchasable.
+- Checks user has sufficient race coins balance.
+- Atomically spends race coins and adds car to owned list.
+- Returns `{ success, carId, raceCoinsBalance, garageRevision }`.
 
 `POST /v1/telegram/webhook`:
 - Verifies secret header.
@@ -244,9 +259,18 @@ Current purchase IDs:
 
 Defined in `src/modules/cars-catalog/cars-catalog.ts`.
 
-Cars:
-- `starter_car`: active, starter default, not purchasable, price `0 XTR`.
-- `second_car`: active, purchasable, price `250 XTR`.
+Cars (prices in race coins):
+- `car0`: active, starter default, not purchasable, price `0 RC`.
+- `car1`: active, purchasable, price `25 RC`.
+- `car2`: active, purchasable, price `50 RC`.
+
+Defined in `src/modules/race-coins/race-coins-catalog.ts`.
+
+Race Coins Bundles (purchased with Telegram Stars):
+- `rc_bundle_10`: 10 coins, price `1 XTR`.
+- `rc_bundle_20`: 20 coins, price `1 XTR`.
+- `rc_bundle_50`: 50 coins, price `1 XTR`.
+- `rc_bundle_100`: 100 coins, price `1 XTR`.
 
 ## Agent Work Rules For This Repo
 

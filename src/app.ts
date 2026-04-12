@@ -16,6 +16,7 @@ import {
 import { buildGarageView } from "./modules/garage/garage-view.js";
 import { classifyPurchaseIntentRetry } from "./modules/payments/purchase-domain.js";
 import type { PurchaseIntentRecord, PurchasesRepository } from "./modules/payments/purchases-repository.js";
+import { getBundleById } from "./modules/race-coins/race-coins-catalog.js";
 import { compareTelegramWebhookSecretToken } from "./modules/telegram/webhook-domain.js";
 import { ensureStarterCarState } from "./modules/users/starter-car.js";
 import type { UsersRepository } from "./modules/users/users-repository.js";
@@ -26,10 +27,9 @@ export interface AppDependencies {
   purchasesRepository?: PurchasesRepository;
   createInvoiceLink?: (input: {
     purchaseId: string;
-    carId: string;
     title: string;
-    invoiceTitle?: string;
-    invoiceDescription?: string;
+    invoiceTitle: string;
+    invoiceDescription: string;
     priceSnapshot: { currency: "XTR"; amount: number };
   }) => Promise<string>;
   handleTelegramWebhook?: (update: unknown) => Promise<void>;
@@ -40,7 +40,11 @@ const telegramAuthBodySchema = z.object({
   initData: z.string().min(1)
 });
 
-const carIntentBodySchema = z.object({
+const coinsIntentBodySchema = z.object({
+  bundleId: z.string().min(1)
+});
+
+const buyCarBodySchema = z.object({
   carId: z.string().min(1)
 });
 
@@ -128,7 +132,10 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
         }))
       );
 
-      return reply.send(garage);
+      return reply.send({
+        ...garage,
+        raceCoinsBalance: user.raceCoinsBalance ?? 0
+      });
     });
 
     app.post("/v1/auth/telegram", async (request, reply) => {
@@ -179,7 +186,8 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
             firstName: user.firstName,
             username: user.username,
             ownedCarIds: starterState.ownedCarIds,
-            garageRevision: starterState.garageRevision
+            garageRevision: starterState.garageRevision,
+            raceCoinsBalance: user.raceCoinsBalance ?? 0
           }
         });
       } catch (error) {
@@ -192,15 +200,20 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
     });
 
     if (purchasesRepository && createInvoiceLink) {
-      app.post("/v1/purchases/car-intents", async (request, reply) => {
+      app.post("/v1/purchases/coins-intents", async (request, reply) => {
         const tokenPayload = await verifyJwtOrReject(request, reply);
         if (!tokenPayload) {
           return;
         }
 
-        const parsedBody = carIntentBodySchema.safeParse(request.body);
+        const parsedBody = coinsIntentBodySchema.safeParse(request.body);
         if (!parsedBody.success) {
-          return reply.code(400).send({ code: "CAR_ID_REQUIRED" });
+          return reply.code(400).send({ code: "BUNDLE_ID_REQUIRED" });
+        }
+
+        const bundle = getBundleById(parsedBody.data.bundleId);
+        if (!bundle) {
+          return reply.code(404).send({ code: "BUNDLE_NOT_FOUND" });
         }
 
         const user = await userRepo.getUserById(tokenPayload.sub);
@@ -208,29 +221,17 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           return reply.code(404).send({ code: "USER_NOT_FOUND" });
         }
 
-        const starterState = ensureStarterCarState(user);
-        const car = getCarById(parsedBody.data.carId);
-        if (!car) {
-          return reply.code(404).send({ code: "CAR_NOT_FOUND" });
-        }
-        if (!canPurchaseCarServerSide(car)) {
-          return reply.code(422).send({ code: "CAR_NOT_PURCHASABLE" });
-        }
-        if (starterState.ownedCarIds.includes(car.carId)) {
-          return reply.code(409).send({ code: "CAR_ALREADY_OWNED" });
-        }
-
         const requestNow = now?.() ?? new Date();
         const existingIntent = await purchasesRepository.findActiveIntent({
           userId: user.userId,
-          carId: car.carId
+          bundleId: bundle.bundleId
         });
 
         if (existingIntent) {
           const retryDecision = classifyPurchaseIntentRetry(
             {
               purchaseId: existingIntent.purchaseId,
-              carId: existingIntent.carId,
+              bundleId: existingIntent.bundleId,
               purchaseStatus: existingIntent.status,
               isActiveIntent: existingIntent.isActiveIntent,
               expiresAt: existingIntent.expiresAt,
@@ -240,7 +241,7 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           );
 
           if (retryDecision.kind === "reuse-existing-intent") {
-            return reply.send(formatPurchaseIntentResponse(existingIntent));
+            return reply.send(formatCoinsIntentResponse(existingIntent));
           }
 
           if (retryDecision.kind === "expire-and-release-intent") {
@@ -254,8 +255,9 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           intent = await purchasesRepository.createIntent({
             userId: user.userId,
             telegramUserId: user.telegramUserId,
-            carId: car.carId,
-            priceSnapshot: car.price,
+            bundleId: bundle.bundleId,
+            priceSnapshot: bundle.price,
+            coinsAmount: bundle.coins,
             expiresAt
           });
         } catch (error) {
@@ -264,31 +266,79 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           }
           const racedIntent = await purchasesRepository.findActiveIntent({
             userId: user.userId,
-            carId: car.carId
+            bundleId: bundle.bundleId
           });
           if (!racedIntent) {
             throw error;
           }
-          return reply.send(formatPurchaseIntentResponse(racedIntent));
+          return reply.send(formatCoinsIntentResponse(racedIntent));
         }
         const invoiceUrl = await createInvoiceLink({
           purchaseId: intent.purchaseId,
-          carId: car.carId,
-          title: car.title,
-          invoiceTitle: car.invoiceTitle,
-          invoiceDescription: car.invoiceDescription,
-          priceSnapshot: car.price
+          title: bundle.invoiceTitle,
+          invoiceTitle: bundle.invoiceTitle,
+          invoiceDescription: bundle.invoiceDescription,
+          priceSnapshot: bundle.price
         });
         await purchasesRepository.setInvoiceUrl(intent.purchaseId, invoiceUrl);
 
         return reply.send(
-          formatPurchaseIntentResponse({
+          formatCoinsIntentResponse({
             ...intent,
             invoiceUrl
           })
         );
       });
     }
+
+    app.post("/v1/purchases/buy-car", async (request, reply) => {
+      const tokenPayload = await verifyJwtOrReject(request, reply);
+      if (!tokenPayload) {
+        return;
+      }
+
+      const parsedBody = buyCarBodySchema.safeParse(request.body);
+      if (!parsedBody.success) {
+        return reply.code(400).send({ code: "CAR_ID_REQUIRED" });
+      }
+
+      const user = await userRepo.getUserById(tokenPayload.sub);
+      if (!user) {
+        return reply.code(404).send({ code: "USER_NOT_FOUND" });
+      }
+
+      const starterState = ensureStarterCarState(user);
+      const car = getCarById(parsedBody.data.carId);
+      if (!car) {
+        return reply.code(404).send({ code: "CAR_NOT_FOUND" });
+      }
+      if (!canPurchaseCarServerSide(car)) {
+        return reply.code(422).send({ code: "CAR_NOT_PURCHASABLE" });
+      }
+      if (starterState.ownedCarIds.includes(car.carId)) {
+        return reply.code(409).send({ code: "CAR_ALREADY_OWNED" });
+      }
+      if (car.price.currency !== "RC") {
+        return reply.code(422).send({ code: "CAR_NOT_PURCHASABLE" });
+      }
+
+      const updatedUser = await userRepo.spendRaceCoins(user.userId, car.price.amount);
+      if (!updatedUser) {
+        return reply.code(422).send({ code: "INSUFFICIENT_BALANCE" });
+      }
+
+      const userWithCar = await userRepo.addOwnedCar(updatedUser.userId, car.carId);
+      if (!userWithCar) {
+        return reply.code(404).send({ code: "USER_NOT_FOUND" });
+      }
+
+      return reply.send({
+        success: true,
+        carId: car.carId,
+        raceCoinsBalance: userWithCar.raceCoinsBalance,
+        garageRevision: userWithCar.garageRevision
+      });
+    });
   }
 
   return app;
@@ -319,18 +369,20 @@ function isDuplicateKeyError(error: unknown): boolean {
   );
 }
 
-function formatPurchaseIntentResponse(intent: {
+function formatCoinsIntentResponse(intent: {
   purchaseId: string;
   status: string;
   invoiceUrl?: string;
   expiresAt: Date;
   priceSnapshot: { currency: "XTR"; amount: number };
+  coinsAmount: number;
 }) {
   return {
     purchaseId: intent.purchaseId,
     status: intent.status,
     invoiceUrl: intent.invoiceUrl,
     expiresAt: intent.expiresAt.toISOString(),
-    price: intent.priceSnapshot
+    price: intent.priceSnapshot,
+    coinsAmount: intent.coinsAmount
   };
 }

@@ -1,7 +1,7 @@
-export type Phase0CarId = "starter_car" | "second_car";
+export type Phase0CarId = "car0" | "car1" | "car2";
 
 export type Phase0CarPrice = {
-  currency: "XTR";
+  currency: "RC";
   amount: number;
 };
 
@@ -13,36 +13,44 @@ export type Phase0Car = {
   isStarterDefault: boolean;
   isPurchasable: boolean;
   price: Phase0CarPrice;
-  invoiceTitle?: string;
-  invoiceDescription?: string;
 };
 
 export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
   {
-    carId: "starter_car",
-    title: "Starter Car",
+    carId: "car0",
+    title: "car0",
     sortOrder: 0,
     active: true,
     isStarterDefault: true,
     isPurchasable: false,
     price: {
-      currency: "XTR",
+      currency: "RC",
       amount: 0
     }
   },
   {
-    carId: "second_car",
-    title: "Second Car",
+    carId: "car1",
+    title: "car1",
     sortOrder: 1,
     active: true,
     isStarterDefault: false,
     isPurchasable: true,
     price: {
-      currency: "XTR",
-      amount: 250
-    },
-    invoiceTitle: "Second Car",
-    invoiceDescription: "Unlock the second car"
+      currency: "RC",
+      amount: 25
+    }
+  },
+  {
+    carId: "car2",
+    title: "car2",
+    sortOrder: 2,
+    active: true,
+    isStarterDefault: false,
+    isPurchasable: true,
+    price: {
+      currency: "RC",
+      amount: 50
+    }
   }
 ] as const;
 

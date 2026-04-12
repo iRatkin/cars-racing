@@ -63,7 +63,7 @@ export const purchasesIndexes = [
     }
   },
   {
-    keys: { userId: 1, carId: 1, isActiveIntent: 1 },
+    keys: { userId: 1, bundleId: 1, isActiveIntent: 1 },
     options: {
       name: "purchases_activeIntent_unique",
       partialFilterExpression: { isActiveIntent: true },

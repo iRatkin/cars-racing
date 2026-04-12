@@ -10,7 +10,7 @@ export type PurchaseStatus =
 
 export interface PurchaseIntentSnapshot {
   purchaseId: string;
-  carId: string;
+  bundleId: string;
   purchaseStatus: PurchaseStatus;
   isActiveIntent: boolean;
   expiresAt: Date;

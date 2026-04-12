@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Telegram Miniapp Cars API
-  version: 0.1.0
-  description: API for Telegram Mini App authentication, garage state, car purchase intents, and Telegram payment webhooks.
+  version: 0.2.0
+  description: API for Telegram Mini App authentication, garage state, race coins purchase intents, car purchases, and Telegram payment webhooks.
 servers:
   - url: http://localhost:3000
     description: Local Docker Compose API
@@ -75,7 +75,7 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Garage state with active catalog cars.
+          description: Garage state with active catalog cars and race coins balance.
           content:
             application/json:
               schema:
@@ -100,12 +100,12 @@ paths:
                 userNotFound:
                   value:
                     code: USER_NOT_FOUND
-  /v1/purchases/car-intents:
+  /v1/purchases/coins-intents:
     post:
       tags:
         - Purchases
-      summary: Create or reuse a car purchase intent
-      operationId: createCarPurchaseIntent
+      summary: Create or reuse a race coins bundle purchase intent
+      operationId: createCoinsPurchaseIntent
       security:
         - bearerAuth: []
       requestBody:
@@ -113,14 +113,68 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateCarPurchaseIntentRequest"
+              $ref: "#/components/schemas/CreateCoinsPurchaseIntentRequest"
       responses:
         "200":
-          description: Invoice-ready purchase intent.
+          description: Invoice-ready purchase intent for race coins bundle.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PurchaseIntentResponse"
+                $ref: "#/components/schemas/CoinsPurchaseIntentResponse"
+        "400":
+          description: bundleId is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                bundleIdRequired:
+                  value:
+                    code: BUNDLE_ID_REQUIRED
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                unauthorized:
+                  value:
+                    code: UNAUTHORIZED
+        "404":
+          description: User or bundle was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                bundleNotFound:
+                  value:
+                    code: BUNDLE_NOT_FOUND
+                userNotFound:
+                  value:
+                    code: USER_NOT_FOUND
+  /v1/purchases/buy-car:
+    post:
+      tags:
+        - Purchases
+      summary: Buy a car with race coins
+      operationId: buyCarWithRaceCoins
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuyCarRequest"
+      responses:
+        "200":
+          description: Car purchased successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuyCarResponse"
         "400":
           description: carId is missing or empty.
           content:
@@ -151,6 +205,9 @@ paths:
                 carNotFound:
                   value:
                     code: CAR_NOT_FOUND
+                userNotFound:
+                  value:
+                    code: USER_NOT_FOUND
         "409":
           description: User already owns the requested car.
           content:
@@ -162,7 +219,7 @@ paths:
                   value:
                     code: CAR_ALREADY_OWNED
         "422":
-          description: Requested car cannot be purchased.
+          description: Car cannot be purchased or insufficient race coins balance.
           content:
             application/json:
               schema:
@@ -171,6 +228,9 @@ paths:
                 notPurchasable:
                   value:
                     code: CAR_NOT_PURCHASABLE
+                insufficientBalance:
+                  value:
+                    code: INSUFFICIENT_BALANCE
   /v1/telegram/webhook:
     post:
       tags:
@@ -247,6 +307,9 @@ components:
             - CAR_NOT_PURCHASABLE
             - CAR_ALREADY_OWNED
             - INVALID_WEBHOOK_SECRET
+            - BUNDLE_ID_REQUIRED
+            - BUNDLE_NOT_FOUND
+            - INSUFFICIENT_BALANCE
     TelegramAuthRequest:
       type: object
       required:
@@ -278,6 +341,7 @@ components:
         - telegramUserId
         - ownedCarIds
         - garageRevision
+        - raceCoinsBalance
       properties:
         userId:
           type: string
@@ -298,15 +362,20 @@ components:
           items:
             type: string
           example:
-            - starter_car
+            - car0
         garageRevision:
           type: integer
           example: 1
+        raceCoinsBalance:
+          type: integer
+          minimum: 0
+          example: 0
     GarageResponse:
       type: object
       required:
         - garageRevision
         - cars
+        - raceCoinsBalance
       properties:
         garageRevision:
           type: integer
@@ -315,6 +384,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GarageCar"
+        raceCoinsBalance:
+          type: integer
+          minimum: 0
+          example: 50
     GarageCar:
       type: object
       required:
@@ -326,18 +399,33 @@ components:
       properties:
         carId:
           type: string
-          example: second_car
+          example: car1
         title:
           type: string
-          example: Second Car
+          example: car1
         owned:
           type: boolean
           example: false
         price:
-          $ref: "#/components/schemas/StarsPrice"
+          $ref: "#/components/schemas/Price"
         canBuy:
           type: boolean
           example: true
+    Price:
+      type: object
+      required:
+        - currency
+        - amount
+      properties:
+        currency:
+          type: string
+          enum:
+            - XTR
+            - RC
+        amount:
+          type: integer
+          minimum: 0
+          example: 25
     StarsPrice:
       type: object
       required:
@@ -351,23 +439,24 @@ components:
         amount:
           type: integer
           minimum: 0
-          example: 250
-    CreateCarPurchaseIntentRequest:
+          example: 1
+    CreateCoinsPurchaseIntentRequest:
       type: object
       required:
-        - carId
+        - bundleId
       properties:
-        carId:
+        bundleId:
           type: string
           minLength: 1
-          example: second_car
-    PurchaseIntentResponse:
+          example: rc_bundle_50
+    CoinsPurchaseIntentResponse:
       type: object
       required:
         - purchaseId
         - status
         - expiresAt
         - price
+        - coinsAmount
       properties:
         purchaseId:
           type: string
@@ -395,3 +484,66 @@ components:
           example: "2026-04-10T10:15:00.000Z"
         price:
           $ref: "#/components/schemas/StarsPrice"
+        coinsAmount:
+          type: integer
+          minimum: 1
+          example: 50
+    BuyCarRequest:
+      type: object
+      required:
+        - carId
+      properties:
+        carId:
+          type: string
+          minLength: 1
+          example: car1
+    BuyCarResponse:
+      type: object
+      required:
+        - success
+        - carId
+        - raceCoinsBalance
+        - garageRevision
+      properties:
+        success:
+          type: boolean
+          example: true
+        carId:
+          type: string
+          example: car1
+        raceCoinsBalance:
+          type: integer
+          minimum: 0
+          example: 25
+        garageRevision:
+          type: integer
+          example: 2
+    RaceCoinsBundle:
+      type: object
+      required:
+        - bundleId
+        - coins
+        - price
+        - invoiceTitle
+        - invoiceDescription
+      properties:
+        bundleId:
+          type: string
+          enum:
+            - rc_bundle_10
+            - rc_bundle_20
+            - rc_bundle_50
+            - rc_bundle_100
+          example: rc_bundle_50
+        coins:
+          type: integer
+          minimum: 1
+          example: 50
+        price:
+          $ref: "#/components/schemas/StarsPrice"
+        invoiceTitle:
+          type: string
+          example: "50 Race Coins"
+        invoiceDescription:
+          type: string
+          example: "Get 50 Race Coins"

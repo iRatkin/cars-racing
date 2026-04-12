@@ -1,4 +1,4 @@
-export const STARTER_CAR_ID = "starter_car" as const;
+export { STARTER_CAR_ID } from "../users/starter-car.js";
 
 export interface GaragePrice {
   currency: string;

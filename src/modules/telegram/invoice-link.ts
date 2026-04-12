@@ -3,15 +3,6 @@ export interface TelegramStarsPriceSnapshot {
   amount: number;
 }
 
-export interface TelegramStarsCatalogCar {
-  carId: string;
-  title: string;
-  isPurchasable: boolean;
-  priceSnapshot: TelegramStarsPriceSnapshot;
-  invoiceTitle?: string;
-  invoiceDescription?: string;
-}
-
 export interface TelegramCreateInvoiceLinkPrice {
   label: string;
   amount: number;
@@ -46,37 +37,25 @@ export type TelegramFetch = (
 
 export interface CreateTelegramInvoiceLinkInput {
   purchaseId: string;
-  carId: string;
   title: string;
-  invoiceTitle?: string;
-  invoiceDescription?: string;
+  invoiceTitle: string;
+  invoiceDescription: string;
   priceSnapshot: TelegramStarsPriceSnapshot;
 }
 
 export function buildTelegramCreateInvoiceLinkRequestBody(
-  purchaseId: string,
-  car: TelegramStarsCatalogCar
+  input: CreateTelegramInvoiceLinkInput
 ): TelegramCreateInvoiceLinkRequestBody {
-  if (car.isPurchasable && !car.invoiceTitle) {
-    throw new Error(`Missing invoiceTitle for purchasable car: ${car.carId}`);
-  }
-
-  if (car.isPurchasable && !car.invoiceDescription) {
-    throw new Error(
-      `Missing invoiceDescription for purchasable car: ${car.carId}`
-    );
-  }
-
   return {
-    title: car.invoiceTitle ?? car.title,
-    description: car.invoiceDescription ?? car.title,
-    payload: purchaseId,
+    title: input.invoiceTitle,
+    description: input.invoiceDescription,
+    payload: input.purchaseId,
     provider_token: "",
     currency: "XTR",
     prices: [
       {
-        label: car.title,
-        amount: car.priceSnapshot.amount
+        label: input.title,
+        amount: input.priceSnapshot.amount
       }
     ]
   };
@@ -87,14 +66,7 @@ export async function createTelegramInvoiceLink(
   input: CreateTelegramInvoiceLinkInput
 ): Promise<string> {
   const fetchImpl = options.fetchImpl ?? defaultTelegramFetch;
-  const body = buildTelegramCreateInvoiceLinkRequestBody(input.purchaseId, {
-    carId: input.carId,
-    title: input.title,
-    isPurchasable: true,
-    priceSnapshot: input.priceSnapshot,
-    invoiceTitle: input.invoiceTitle,
-    invoiceDescription: input.invoiceDescription
-  });
+  const body = buildTelegramCreateInvoiceLinkRequestBody(input);
   const response = await fetchImpl(
     `https://api.telegram.org/bot${options.botToken}/createInvoiceLink`,
     {

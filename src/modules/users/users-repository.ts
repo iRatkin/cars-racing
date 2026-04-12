@@ -10,6 +10,7 @@ export interface AppUser {
   ownedCarIds: string[];
   selectedCarId?: string | null;
   garageRevision: number;
+  raceCoinsBalance: number;
 }
 
 export interface UpsertTelegramUserInput {
@@ -25,4 +26,7 @@ export interface UpsertTelegramUserInput {
 export interface UsersRepository {
   upsertTelegramUser(input: UpsertTelegramUserInput): Promise<AppUser>;
   getUserById(userId: string): Promise<AppUser | null>;
+  addRaceCoins(userId: string, amount: number): Promise<AppUser>;
+  spendRaceCoins(userId: string, amount: number): Promise<AppUser | null>;
+  addOwnedCar(userId: string, carId: string): Promise<AppUser | null>;
 }
