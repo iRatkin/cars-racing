@@ -21,4 +21,4 @@ COPY --from=build /app/dist ./dist
 COPY swagger.yaml ./swagger.yaml
 COPY public ./public
 
-CMD ["sh", "-c", "echo \"ENV CHECK: BOT_TOKEN=${BOT_TOKEN:+SET} MONGO_URI=${MONGO_URI:+SET} JWT_SECRET=${JWT_SECRET:+SET}\" && node dist/src/server.js"]
+CMD ["node", "dist/src/server.js"]
