@@ -11,6 +11,12 @@ type EnvName = AppConfig["env"];
 
 const validEnvs = new Set<EnvName>(["dev", "stage", "prod"]);
 
+const envAliases: Record<string, EnvName> = {
+  production: "prod",
+  development: "dev",
+  staging: "stage"
+};
+
 export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const botToken = requireEnv(env, "BOT_TOKEN");
   const jwtSecret = requireEnv(env, "JWT_SECRET");
@@ -41,6 +47,10 @@ function parseEnvName(value: string | undefined): EnvName {
   }
   if (validEnvs.has(value as EnvName)) {
     return value as EnvName;
+  }
+  const alias = envAliases[value];
+  if (alias) {
+    return alias;
   }
   throw new Error(`Invalid NODE_ENV: ${value}`);
 }

@@ -37,7 +37,7 @@ export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
     isPurchasable: true,
     price: {
       currency: "RC",
-      amount: 25
+      amount: 1
     }
   },
   {
