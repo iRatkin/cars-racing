@@ -119,7 +119,7 @@ export function buildUserId(telegramUserId: string): string {
   return `usr_${telegramUserId}`;
 }
 
-function mapUserDocument(document: WithId<MongoUserDocument> | MongoUserDocument): AppUser {
+export function mapUserDocument(document: WithId<MongoUserDocument> | MongoUserDocument): AppUser {
   return {
     userId: document.userId,
     telegramUserId: document.telegramUserId,

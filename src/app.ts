@@ -1,9 +1,12 @@
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import type { MongoClient } from "mongodb";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { AppConfig } from "./config/config.js";
+import { enterSeasonAtomicallyInMongo, finishSeasonRaceAtomicallyInMongo } from "./infra/mongo/season-mongo-transactions.js";
 import {
   TelegramInitDataValidationError,
   validateTelegramInitData
@@ -20,11 +23,23 @@ import { getBundleById } from "./modules/race-coins/race-coins-catalog.js";
 import { compareTelegramWebhookSecretToken } from "./modules/telegram/webhook-domain.js";
 import { ensureStarterCarState } from "./modules/users/starter-car.js";
 import type { UsersRepository } from "./modules/users/users-repository.js";
+import {
+  canStartRace,
+  computeSeasonStatus,
+  type LeaderboardEntry
+} from "./modules/seasons/seasons-domain.js";
+import type { RaceRunsRepository } from "./modules/seasons/race-runs-repository.js";
+import type { SeasonEntriesRepository } from "./modules/seasons/season-entries-repository.js";
+import type { SeasonsRepository } from "./modules/seasons/seasons-repository.js";
 
 export interface AppDependencies {
   config?: AppConfig;
   usersRepository?: UsersRepository;
   purchasesRepository?: PurchasesRepository;
+  seasonsRepository?: SeasonsRepository;
+  seasonEntriesRepository?: SeasonEntriesRepository;
+  raceRunsRepository?: RaceRunsRepository;
+  mongoClient?: MongoClient;
   createInvoiceLink?: (input: {
     purchaseId: string;
     title: string;
@@ -48,11 +63,25 @@ const buyCarBodySchema = z.object({
   carId: z.string().min(1)
 });
 
+const seasonIdParamSchema = z.object({
+  seasonId: z.string().min(1)
+});
+
+const raceFinishBodySchema = z.object({
+  raceId: z.string().min(1),
+  seed: z.string().min(1),
+  score: z.number().int().min(0)
+});
+
 export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
   const {
     config,
     usersRepository,
     purchasesRepository,
+    seasonsRepository,
+    seasonEntriesRepository,
+    raceRunsRepository,
+    mongoClient,
     createInvoiceLink,
     handleTelegramWebhook,
     now
@@ -362,9 +391,310 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
         garageRevision: userWithCar.garageRevision
       });
     });
+
+    if (seasonsRepository && seasonEntriesRepository && raceRunsRepository && mongoClient) {
+      const seasonsRepo = seasonsRepository;
+      const seasonEntriesRepo = seasonEntriesRepository;
+      const raceRunsRepo = raceRunsRepository;
+      const txClient = mongoClient;
+
+      app.get("/v1/seasons", async (request, reply) => {
+        const tokenPayload = await verifyJwtOrReject(request, reply);
+        if (!tokenPayload) {
+          return;
+        }
+
+        const requestNow = now?.() ?? new Date();
+        const seasons = await seasonsRepo.getActiveAndUpcomingSeasons(requestNow);
+
+        const entries = await Promise.all(
+          seasons.map(async (season) => {
+            const entry = await seasonEntriesRepo.findEntry(season.seasonId, tokenPayload.sub);
+            return {
+              seasonId: season.seasonId,
+              title: season.title,
+              mapId: season.mapId,
+              entryFee: season.entryFee,
+              startsAt: season.startsAt.toISOString(),
+              endsAt: season.endsAt.toISOString(),
+              status: computeSeasonStatus(season, requestNow),
+              entered: entry !== null,
+              bestScore: entry?.bestScore ?? null,
+              totalRaces: entry?.totalRaces ?? null
+            };
+          })
+        );
+
+        return reply.send({ seasons: entries });
+      });
+
+      app.get("/v1/seasons/:seasonId", async (request, reply) => {
+        const tokenPayload = await verifyJwtOrReject(request, reply);
+        if (!tokenPayload) {
+          return;
+        }
+
+        const params = seasonIdParamSchema.safeParse(request.params);
+        if (!params.success) {
+          return reply.code(400).send({ code: "SEASON_ID_REQUIRED" });
+        }
+
+        const requestNow = now?.() ?? new Date();
+        const season = await seasonsRepo.getSeasonById(params.data.seasonId, requestNow);
+        if (!season) {
+          return reply.code(404).send({ code: "SEASON_NOT_FOUND" });
+        }
+
+        const entry = await seasonEntriesRepo.findEntry(season.seasonId, tokenPayload.sub);
+
+        return reply.send({
+          seasonId: season.seasonId,
+          title: season.title,
+          mapId: season.mapId,
+          entryFee: season.entryFee,
+          startsAt: season.startsAt.toISOString(),
+          endsAt: season.endsAt.toISOString(),
+          status: computeSeasonStatus(season, requestNow),
+          entered: entry !== null,
+          bestScore: entry?.bestScore ?? null,
+          totalRaces: entry?.totalRaces ?? null
+        });
+      });
+
+      app.post("/v1/seasons/:seasonId/enter", async (request, reply) => {
+        const tokenPayload = await verifyJwtOrReject(request, reply);
+        if (!tokenPayload) {
+          return;
+        }
+
+        const params = seasonIdParamSchema.safeParse(request.params);
+        if (!params.success) {
+          return reply.code(400).send({ code: "SEASON_ID_REQUIRED" });
+        }
+
+        const requestNow = now?.() ?? new Date();
+        const season = await seasonsRepo.getSeasonById(params.data.seasonId, requestNow);
+        if (!season) {
+          return reply.code(404).send({ code: "SEASON_NOT_FOUND" });
+        }
+
+        const seasonStatus = computeSeasonStatus(season, requestNow);
+        if (seasonStatus !== "active") {
+          return reply.code(422).send({ code: "SEASON_NOT_ACTIVE" });
+        }
+
+        const enterResult = await enterSeasonAtomicallyInMongo(txClient, {
+          season,
+          userId: tokenPayload.sub
+        });
+        if (enterResult.kind === "already-entered") {
+          return reply.code(409).send({ code: "ALREADY_ENTERED" });
+        }
+        if (enterResult.kind === "insufficient-balance") {
+          return reply.code(422).send({ code: "INSUFFICIENT_BALANCE" });
+        }
+
+        return reply.send({
+          success: true,
+          seasonId: season.seasonId,
+          entryId: enterResult.entry.entryId,
+          raceCoinsBalance: enterResult.user.raceCoinsBalance
+        });
+      });
+
+      app.post("/v1/seasons/:seasonId/races/start", async (request, reply) => {
+        const tokenPayload = await verifyJwtOrReject(request, reply);
+        if (!tokenPayload) {
+          return;
+        }
+
+        const params = seasonIdParamSchema.safeParse(request.params);
+        if (!params.success) {
+          return reply.code(400).send({ code: "SEASON_ID_REQUIRED" });
+        }
+
+        const requestNow = now?.() ?? new Date();
+        const season = await seasonsRepo.getSeasonById(params.data.seasonId, requestNow);
+        if (!season) {
+          return reply.code(404).send({ code: "SEASON_NOT_FOUND" });
+        }
+
+        if (!canStartRace(season, requestNow)) {
+          return reply.code(422).send({ code: "SEASON_NOT_ACTIVE" });
+        }
+
+        const entry = await seasonEntriesRepo.findEntry(season.seasonId, tokenPayload.sub);
+        if (!entry) {
+          return reply.code(403).send({ code: "NOT_ENTERED" });
+        }
+
+        const seed = randomUUID();
+        const raceRun = await raceRunsRepo.createRaceRun({
+          seasonId: season.seasonId,
+          userId: tokenPayload.sub,
+          seed
+        });
+
+        return reply.send({
+          raceId: raceRun.raceId,
+          seed: raceRun.seed
+        });
+      });
+
+      app.post("/v1/seasons/:seasonId/races/finish", async (request, reply) => {
+        const tokenPayload = await verifyJwtOrReject(request, reply);
+        if (!tokenPayload) {
+          return;
+        }
+
+        const params = seasonIdParamSchema.safeParse(request.params);
+        if (!params.success) {
+          return reply.code(400).send({ code: "SEASON_ID_REQUIRED" });
+        }
+
+        const parsedBody = raceFinishBodySchema.safeParse(request.body);
+        if (!parsedBody.success) {
+          return reply.code(400).send({ code: "INVALID_RACE_RESULT" });
+        }
+
+        const raceRun = await raceRunsRepo.getRaceRunById(parsedBody.data.raceId);
+        if (!raceRun) {
+          return reply.code(404).send({ code: "RACE_NOT_FOUND" });
+        }
+
+        if (raceRun.userId !== tokenPayload.sub) {
+          return reply.code(403).send({ code: "RACE_FORBIDDEN" });
+        }
+
+        if (raceRun.seasonId !== params.data.seasonId) {
+          return reply.code(400).send({ code: "RACE_SEASON_MISMATCH" });
+        }
+
+        if (raceRun.seed !== parsedBody.data.seed) {
+          return reply.code(400).send({ code: "INVALID_SEED" });
+        }
+
+        if (raceRun.status !== "started") {
+          return reply.code(409).send({ code: "RACE_ALREADY_FINISHED" });
+        }
+
+        const entry = await seasonEntriesRepo.findEntry(params.data.seasonId, tokenPayload.sub);
+        if (!entry) {
+          return reply.code(403).send({ code: "NOT_ENTERED" });
+        }
+
+        const finishResult = await finishSeasonRaceAtomicallyInMongo(txClient, {
+          raceId: raceRun.raceId,
+          score: parsedBody.data.score,
+          entry
+        });
+        if (finishResult.kind === "already-finished") {
+          return reply.code(409).send({ code: "RACE_ALREADY_FINISHED" });
+        }
+
+        return reply.send({
+          raceId: finishResult.raceRun.raceId,
+          score: finishResult.raceRun.score,
+          isNewBest: finishResult.isNewBest,
+          bestScore: finishResult.bestScore
+        });
+      });
+
+      app.get("/v1/seasons/:seasonId/leaderboard", async (request, reply) => {
+        const tokenPayload = await verifyJwtOrReject(request, reply);
+        if (!tokenPayload) {
+          return;
+        }
+
+        const params = seasonIdParamSchema.safeParse(request.params);
+        if (!params.success) {
+          return reply.code(400).send({ code: "SEASON_ID_REQUIRED" });
+        }
+
+        const requestNow = now?.() ?? new Date();
+        const season = await seasonsRepo.getSeasonById(params.data.seasonId, requestNow);
+        if (!season) {
+          return reply.code(404).send({ code: "SEASON_NOT_FOUND" });
+        }
+
+        const queryLimit = parseLeaderboardLimit(request);
+        const topEntries = await seasonEntriesRepo.getLeaderboard(season.seasonId, queryLimit);
+
+        const entries: LeaderboardEntry[] = [];
+        let previousScore: number | null = null;
+        let previousRank = 0;
+        for (const [index, seasonEntry] of topEntries.entries()) {
+          const user = await userRepo.getUserById(seasonEntry.userId);
+          const rank =
+            previousScore !== null && seasonEntry.bestScore === previousScore
+              ? previousRank
+              : index + 1;
+          entries.push({
+            rank,
+            userId: seasonEntry.userId,
+            username: user?.username,
+            firstName: user?.firstName,
+            bestScore: seasonEntry.bestScore,
+            totalRaces: seasonEntry.totalRaces
+          });
+          previousScore = seasonEntry.bestScore;
+          previousRank = rank;
+        }
+
+        const totalParticipants = await seasonEntriesRepo.countEntries(season.seasonId);
+
+        let currentPlayer: LeaderboardEntry | undefined;
+        const playerInTop = entries.find((e) => e.userId === tokenPayload.sub);
+        if (playerInTop) {
+          currentPlayer = playerInTop;
+        } else {
+          const playerEntry = await seasonEntriesRepo.findEntry(season.seasonId, tokenPayload.sub);
+          if (playerEntry) {
+            const playerRank = await seasonEntriesRepo.getEntryRank(
+              season.seasonId,
+              tokenPayload.sub
+            );
+            const playerUser = await userRepo.getUserById(tokenPayload.sub);
+            currentPlayer = {
+              rank: playerRank ?? totalParticipants,
+              userId: playerEntry.userId,
+              username: playerUser?.username,
+              firstName: playerUser?.firstName,
+              bestScore: playerEntry.bestScore,
+              totalRaces: playerEntry.totalRaces
+            };
+          }
+        }
+
+        return reply.send({
+          seasonId: season.seasonId,
+          entries,
+          currentPlayer: currentPlayer ?? null,
+          totalParticipants
+        });
+      });
+    }
   }
 
   return app;
+}
+
+function parseLeaderboardLimit(request: FastifyRequest): number {
+  const raw = request.query;
+  if (typeof raw !== "object" || raw === null || !("limit" in raw)) {
+    return 100;
+  }
+  const limitVal = Reflect.get(raw, "limit");
+  const parsed =
+    typeof limitVal === "string"
+      ? Number(limitVal)
+      : typeof limitVal === "number"
+        ? limitVal
+        : NaN;
+  if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 100) {
+    return parsed;
+  }
+  return 100;
 }
 
 function stringOrUndefined(value: unknown): string | undefined {

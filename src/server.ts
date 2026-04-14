@@ -15,7 +15,8 @@ async function main(): Promise<void> {
 
   const app = buildMongoBackedApp({
     config,
-    db
+    db,
+    mongoClient
   });
 
   let isClosing = false;

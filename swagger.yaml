@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Telegram Miniapp Cars API
-  version: 0.2.0
-  description: API for Telegram Mini App authentication, garage state, race coins purchase intents, car purchases, and Telegram payment webhooks.
+  version: 0.3.0
+  description: API for Telegram Mini App authentication, garage state, race coins purchase intents, car purchases, battle seasons with solo races and leaderboards, and Telegram payment webhooks.
 servers:
   - url: http://localhost:3000
     description: Local Docker Compose API
@@ -11,6 +11,7 @@ tags:
   - name: Auth
   - name: Garage
   - name: Purchases
+  - name: Seasons
   - name: Telegram
 paths:
   /health:
@@ -231,6 +232,283 @@ paths:
                 insufficientBalance:
                   value:
                     code: INSUFFICIENT_BALANCE
+  /v1/seasons:
+    get:
+      tags:
+        - Seasons
+      summary: List active and upcoming battle seasons
+      operationId: listSeasons
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Seasons the user may see with participation hints.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeasonListResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/seasons/{seasonId}:
+    get:
+      tags:
+        - Seasons
+      summary: Get season details and participation status
+      operationId: getSeasonById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Season detail for the authenticated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeasonDetailResponse"
+        "400":
+          description: seasonId is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Season was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/seasons/{seasonId}/enter:
+    post:
+      tags:
+        - Seasons
+      summary: Enter a season by paying the entry fee in race coins
+      operationId: enterSeason
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeasonEnterRequest"
+      responses:
+        "200":
+          description: User entered the season successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeasonEnterResponse"
+        "400":
+          description: seasonId is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Season was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: User is already entered in this season.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Season is not active or insufficient race coins balance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/seasons/{seasonId}/races/start:
+    post:
+      tags:
+        - Seasons
+      summary: Start a solo race and receive a server seed
+      operationId: startSeasonRace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Race started with a new raceId and seed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RaceStartResponse"
+        "400":
+          description: seasonId is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: User has not entered this season.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Season was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Season is not active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/seasons/{seasonId}/races/finish:
+    post:
+      tags:
+        - Seasons
+      summary: Submit a solo race result
+      operationId: finishSeasonRace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RaceFinishRequest"
+      responses:
+        "200":
+          description: Race result recorded and season entry updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RaceFinishResponse"
+        "400":
+          description: Invalid body, season mismatch, or invalid seed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: User cannot submit this race or is not entered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Season or race was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Race was already finished.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/seasons/{seasonId}/leaderboard:
+    get:
+      tags:
+        - Seasons
+      summary: Get season leaderboard with competition ranks
+      operationId: getSeasonLeaderboard
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+      responses:
+        "200":
+          description: Top participants and optional current player placement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardResponse"
+        "400":
+          description: seasonId is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Season was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/telegram/webhook:
     post:
       tags:
@@ -310,6 +588,17 @@ components:
             - BUNDLE_ID_REQUIRED
             - BUNDLE_NOT_FOUND
             - INSUFFICIENT_BALANCE
+            - SEASON_ID_REQUIRED
+            - SEASON_NOT_FOUND
+            - SEASON_NOT_ACTIVE
+            - ALREADY_ENTERED
+            - NOT_ENTERED
+            - INVALID_RACE_RESULT
+            - RACE_NOT_FOUND
+            - RACE_FORBIDDEN
+            - RACE_SEASON_MISMATCH
+            - INVALID_SEED
+            - RACE_ALREADY_FINISHED
     TelegramAuthRequest:
       type: object
       required:
@@ -547,3 +836,211 @@ components:
         invoiceDescription:
           type: string
           example: "Get 50 Race Coins"
+    SeasonListResponse:
+      type: object
+      required:
+        - seasons
+      properties:
+        seasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeasonListItem"
+    SeasonListItem:
+      type: object
+      required:
+        - seasonId
+        - title
+        - mapId
+        - entryFee
+        - startsAt
+        - endsAt
+        - status
+        - entered
+        - bestScore
+        - totalRaces
+      properties:
+        seasonId:
+          type: string
+        title:
+          type: string
+        mapId:
+          type: string
+        entryFee:
+          type: integer
+          minimum: 0
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - upcoming
+            - active
+            - finished
+        entered:
+          type: boolean
+        bestScore:
+          type: integer
+          nullable: true
+        totalRaces:
+          type: integer
+          nullable: true
+    SeasonDetailResponse:
+      type: object
+      required:
+        - seasonId
+        - title
+        - mapId
+        - entryFee
+        - startsAt
+        - endsAt
+        - status
+        - entered
+        - bestScore
+        - totalRaces
+      properties:
+        seasonId:
+          type: string
+        title:
+          type: string
+        mapId:
+          type: string
+        entryFee:
+          type: integer
+          minimum: 0
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - upcoming
+            - active
+            - finished
+        entered:
+          type: boolean
+        bestScore:
+          type: integer
+          nullable: true
+        totalRaces:
+          type: integer
+          nullable: true
+    SeasonEnterRequest:
+      type: object
+      additionalProperties: false
+      description: Empty body; season is determined by the path parameter.
+      properties: {}
+    SeasonEnterResponse:
+      type: object
+      required:
+        - success
+        - seasonId
+        - entryId
+        - raceCoinsBalance
+      properties:
+        success:
+          type: boolean
+          example: true
+        seasonId:
+          type: string
+        entryId:
+          type: string
+        raceCoinsBalance:
+          type: integer
+          minimum: 0
+    RaceStartResponse:
+      type: object
+      required:
+        - raceId
+        - seed
+      properties:
+        raceId:
+          type: string
+        seed:
+          type: string
+    RaceFinishRequest:
+      type: object
+      required:
+        - raceId
+        - seed
+        - score
+      properties:
+        raceId:
+          type: string
+          minLength: 1
+        seed:
+          type: string
+          minLength: 1
+        score:
+          type: integer
+          minimum: 0
+    RaceFinishResponse:
+      type: object
+      required:
+        - raceId
+        - score
+        - isNewBest
+        - bestScore
+      properties:
+        raceId:
+          type: string
+        score:
+          type: integer
+          minimum: 0
+        isNewBest:
+          type: boolean
+        bestScore:
+          type: integer
+          minimum: 0
+    LeaderboardResponse:
+      type: object
+      required:
+        - seasonId
+        - entries
+        - currentPlayer
+        - totalParticipants
+      properties:
+        seasonId:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeaderboardEntry"
+        currentPlayer:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/LeaderboardEntry"
+        totalParticipants:
+          type: integer
+          minimum: 0
+    LeaderboardEntry:
+      type: object
+      required:
+        - rank
+        - userId
+        - bestScore
+        - totalRaces
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        userId:
+          type: string
+        username:
+          type: string
+          nullable: true
+        firstName:
+          type: string
+          nullable: true
+        bestScore:
+          type: integer
+          minimum: 0
+        totalRaces:
+          type: integer
+          minimum: 0

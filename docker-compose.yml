@@ -20,10 +20,7 @@ services:
 
   mongo:
     image: mongo:7
-    entrypoint:
-      - /bin/sh
-      - -c
-      - exec docker-entrypoint.sh mongod --quiet >/dev/null 2>&1
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--quiet"]
     logging:
       driver: "none"
     environment:
@@ -33,11 +30,26 @@ services:
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep '[m]ongod' >/dev/null"]
-      interval: 10s
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'rs.status().ok' | grep -q 1"]
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 12
+      start_period: 20s
+
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_started
+    restart: on-failure
+    command:
+      [
+        "mongosh",
+        "mongo:27017",
+        "--quiet",
+        "--eval",
+        "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }) }"
+      ]
 
 volumes:
   mongo-data:

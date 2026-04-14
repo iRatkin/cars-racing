@@ -14,10 +14,12 @@ const validEnvs = new Set<EnvName>(["dev", "stage", "prod"]);
 const envAliases: Record<string, EnvName> = {
   production: "prod",
   development: "dev",
-  staging: "stage"
+  staging: "stage",
 };
 
-export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
+export function loadConfigFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): AppConfig {
   const botToken = requireEnv(env, "BOT_TOKEN");
   const jwtSecret = requireEnv(env, "JWT_SECRET");
   const mongoUri = requireEnv(env, "MONGO_URI");
@@ -29,7 +31,7 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AppConf
     mongoUri,
     telegramWebhookSecret,
     env: parseEnvName(env.NODE_ENV),
-    port: parsePort(env.PORT)
+    port: parsePort(env.PORT),
   };
 }
 

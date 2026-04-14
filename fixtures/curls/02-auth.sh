@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BASE_URL="${1:-https://cars-racing-production.up.railway.app}"
 INIT_DATA=$(cat "$SCRIPT_DIR/../initData.txt")
 
-RESPONSE=$(curl -s -X POST http://localhost:3000/v1/auth/telegram \
+RESPONSE=$(curl -s -X POST "$BASE_URL/v1/auth/telegram" \
   -H "Content-Type: application/json" \
   -d "{\"initData\": \"$INIT_DATA\"}")
 
