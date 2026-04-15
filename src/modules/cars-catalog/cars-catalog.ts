@@ -1,4 +1,4 @@
-export type Phase0CarId = "car0" | "car1" | "car2";
+export type Phase0CarId = "car0" | "car1" | "car2" | "car3" | "car4" | "car5";
 
 export type Phase0CarPrice = {
   currency: "RC";
@@ -50,6 +50,42 @@ export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
     price: {
       currency: "RC",
       amount: 50
+    }
+  },
+  {
+    carId: "car3",
+    title: "car3",
+    sortOrder: 3,
+    active: true,
+    isStarterDefault: false,
+    isPurchasable: true,
+    price: {
+      currency: "RC",
+      amount: 100
+    }
+  },
+  {
+    carId: "car4",
+    title: "car4",
+    sortOrder: 4,
+    active: true,
+    isStarterDefault: false,
+    isPurchasable: true,
+    price: {
+      currency: "RC",
+      amount: 250
+    }
+  },
+  {
+    carId: "car5",
+    title: "car5",
+    sortOrder: 5,
+    active: true,
+    isStarterDefault: false,
+    isPurchasable: true,
+    price: {
+      currency: "RC",
+      amount: 500
     }
   }
 ] as const;

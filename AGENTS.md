@@ -337,6 +337,9 @@ Cars (prices in race coins):
 - `car0`: active, starter default, not purchasable, price `0 RC`.
 - `car1`: active, purchasable, price `1 RC`.
 - `car2`: active, purchasable, price `50 RC`.
+- `car3`: active, purchasable, price `100 RC`.
+- `car4`: active, purchasable, price `250 RC`.
+- `car5`: active, purchasable, price `500 RC`.
 
 Defined in `src/modules/race-coins/race-coins-catalog.ts`.
 
