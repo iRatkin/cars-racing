@@ -1,4 +1,8 @@
-export type RaceCoinsBundleId = "rc_bundle_10" | "rc_bundle_20" | "rc_bundle_50" | "rc_bundle_100";
+export type RaceCoinsBundleId =
+  | "rc_bundle_100"
+  | "rc_bundle_300"
+  | "rc_bundle_500"
+  | "rc_bundle_1000";
 
 export type RaceCoinsBundle = {
   bundleId: RaceCoinsBundleId;
@@ -10,32 +14,32 @@ export type RaceCoinsBundle = {
 
 export const RACE_COINS_BUNDLES: readonly RaceCoinsBundle[] = [
   {
-    bundleId: "rc_bundle_10",
-    coins: 10,
-    price: { currency: "XTR", amount: 1 },
-    invoiceTitle: "10 Race Coins",
-    invoiceDescription: "Get 10 Race Coins"
-  },
-  {
-    bundleId: "rc_bundle_20",
-    coins: 20,
-    price: { currency: "XTR", amount: 1 },
-    invoiceTitle: "20 Race Coins",
-    invoiceDescription: "Get 20 Race Coins"
-  },
-  {
-    bundleId: "rc_bundle_50",
-    coins: 50,
-    price: { currency: "XTR", amount: 1 },
-    invoiceTitle: "50 Race Coins",
-    invoiceDescription: "Get 50 Race Coins"
-  },
-  {
     bundleId: "rc_bundle_100",
     coins: 100,
     price: { currency: "XTR", amount: 1 },
     invoiceTitle: "100 Race Coins",
     invoiceDescription: "Get 100 Race Coins"
+  },
+  {
+    bundleId: "rc_bundle_300",
+    coins: 300,
+    price: { currency: "XTR", amount: 1 },
+    invoiceTitle: "300 Race Coins",
+    invoiceDescription: "Get 300 Race Coins"
+  },
+  {
+    bundleId: "rc_bundle_500",
+    coins: 500,
+    price: { currency: "XTR", amount: 1 },
+    invoiceTitle: "500 Race Coins",
+    invoiceDescription: "Get 500 Race Coins"
+  },
+  {
+    bundleId: "rc_bundle_1000",
+    coins: 1000,
+    price: { currency: "XTR", amount: 1 },
+    invoiceTitle: "1000 Race Coins",
+    invoiceDescription: "Get 1000 Race Coins"
   }
 ] as const;
 

@@ -341,10 +341,10 @@ Cars (prices in race coins):
 Defined in `src/modules/race-coins/race-coins-catalog.ts`.
 
 Race Coins Bundles (purchased with Telegram Stars):
-- `rc_bundle_10`: 10 coins, price `1 XTR`.
-- `rc_bundle_20`: 20 coins, price `1 XTR`.
-- `rc_bundle_50`: 50 coins, price `1 XTR`.
 - `rc_bundle_100`: 100 coins, price `1 XTR`.
+- `rc_bundle_300`: 300 coins, price `1 XTR`.
+- `rc_bundle_500`: 500 coins, price `1 XTR`.
+- `rc_bundle_1000`: 1000 coins, price `1 XTR`.
 
 ## Testing with curl scripts
 

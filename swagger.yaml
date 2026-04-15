@@ -737,7 +737,7 @@ components:
         bundleId:
           type: string
           minLength: 1
-          example: rc_bundle_50
+          example: rc_bundle_100
     CoinsPurchaseIntentResponse:
       type: object
       required:
@@ -819,11 +819,11 @@ components:
         bundleId:
           type: string
           enum:
-            - rc_bundle_10
-            - rc_bundle_20
-            - rc_bundle_50
             - rc_bundle_100
-          example: rc_bundle_50
+            - rc_bundle_300
+            - rc_bundle_500
+            - rc_bundle_1000
+          example: rc_bundle_100
         coins:
           type: integer
           minimum: 1
