@@ -65,7 +65,8 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
   const webhookHandler = createWebhookHandler({
     purchasesRepository,
     usersRepository,
-    telegramOptions
+    telegramOptions,
+    miniAppUrl: input.config.miniAppUrl
   });
 
   return buildApp({

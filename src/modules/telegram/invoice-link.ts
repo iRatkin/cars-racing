@@ -137,6 +137,60 @@ export async function answerPreCheckoutQuery(
   }
 }
 
+export interface TelegramSendMessageInput {
+  chatId: number | string;
+  text: string;
+  replyMarkup?: TelegramInlineKeyboardMarkup;
+}
+
+export interface TelegramInlineKeyboardMarkup {
+  inline_keyboard: TelegramInlineKeyboardButton[][];
+}
+
+export interface TelegramInlineKeyboardButton {
+  text: string;
+  web_app?: { url: string };
+  url?: string;
+}
+
+export async function sendTelegramMessage(
+  options: TelegramInvoiceLinkClientOptions,
+  input: TelegramSendMessageInput
+): Promise<void> {
+  const fetchImpl = options.fetchImpl ?? defaultTelegramFetch;
+  const body: Record<string, unknown> = {
+    chat_id: input.chatId,
+    text: input.text
+  };
+  if (input.replyMarkup) {
+    body.reply_markup = input.replyMarkup;
+  }
+
+  const response = await fetchImpl(
+    `https://api.telegram.org/bot${options.botToken}/sendMessage`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+
+  let responseBody: TelegramApiResponse;
+  try {
+    responseBody = await response.json() as TelegramApiResponse;
+  } catch {
+    throw new Error(
+      `Telegram sendMessage failed: HTTP ${response.status} (non-JSON response)`
+    );
+  }
+
+  if (!response.ok || !responseBody.ok) {
+    throw new Error(
+      `Telegram sendMessage failed: ${responseBody.description ?? `HTTP ${response.status}`}`
+    );
+  }
+}
+
 const defaultTelegramFetch: TelegramFetch = (input, init) => fetch(input, init);
 
 interface TelegramCreateInvoiceLinkResponse {

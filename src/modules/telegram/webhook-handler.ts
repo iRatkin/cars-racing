@@ -1,11 +1,13 @@
 import type { PurchasesRepository } from "../payments/purchases-repository.js";
 import type { UsersRepository } from "../users/users-repository.js";
 import type { TelegramInvoiceLinkClientOptions } from "./invoice-link.js";
-import { answerPreCheckoutQuery } from "./invoice-link.js";
+import { answerPreCheckoutQuery, sendTelegramMessage } from "./invoice-link.js";
 import {
+  isTelegramBotCommandUpdate,
   isTelegramPreCheckoutWebhookUpdate,
   isTelegramSuccessfulPaymentWebhookUpdate,
   normalizeTelegramUserId,
+  type TelegramBotCommandUpdate,
   type TelegramPreCheckoutWebhookUpdate,
   type TelegramSuccessfulPaymentWebhookUpdate
 } from "./webhook-domain.js";
@@ -14,6 +16,7 @@ export interface WebhookHandlerDependencies {
   purchasesRepository: PurchasesRepository;
   usersRepository: UsersRepository;
   telegramOptions: TelegramInvoiceLinkClientOptions;
+  miniAppUrl?: string;
   logger?: WebhookLogger;
 }
 
@@ -24,9 +27,14 @@ export interface WebhookLogger {
 }
 
 export function createWebhookHandler(deps: WebhookHandlerDependencies) {
-  const { purchasesRepository, usersRepository, telegramOptions, logger } = deps;
+  const { purchasesRepository, usersRepository, telegramOptions, miniAppUrl, logger } = deps;
 
   return async function handleTelegramWebhook(update: unknown): Promise<void> {
+    if (isTelegramBotCommandUpdate(update, "/start")) {
+      await handleStartCommand(update);
+      return;
+    }
+
     if (isTelegramPreCheckoutWebhookUpdate(update)) {
       await handlePreCheckoutQuery(update);
       return;
@@ -39,6 +47,29 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
 
     logger?.info({ update }, "ignoring unsupported webhook update");
   };
+
+  async function handleStartCommand(update: TelegramBotCommandUpdate): Promise<void> {
+    const chatId = update.message.chat.id;
+
+    if (miniAppUrl) {
+      await sendTelegramMessage(telegramOptions, {
+        chatId,
+        text: "Welcome! Tap the button below to start racing.",
+        replyMarkup: {
+          inline_keyboard: [
+            [{ text: "Play", web_app: { url: miniAppUrl } }]
+          ]
+        }
+      });
+    } else {
+      await sendTelegramMessage(telegramOptions, {
+        chatId,
+        text: "Welcome to Cars Racing!"
+      });
+    }
+
+    logger?.info({ chatId }, "/start command handled");
+  }
 
   async function handlePreCheckoutQuery(update: TelegramPreCheckoutWebhookUpdate): Promise<void> {
     const query = update.pre_checkout_query;

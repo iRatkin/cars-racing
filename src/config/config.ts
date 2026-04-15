@@ -3,6 +3,7 @@ export interface AppConfig {
   jwtSecret: string;
   mongoUri: string;
   telegramWebhookSecret: string;
+  miniAppUrl: string | undefined;
   env: "dev" | "stage" | "prod";
   port: number;
 }
@@ -30,6 +31,7 @@ export function loadConfigFromEnv(
     jwtSecret,
     mongoUri,
     telegramWebhookSecret,
+    miniAppUrl: env.MINI_APP_URL || "https://thelightone.github.io/DriftHTML/",
     env: parseEnvName(env.NODE_ENV),
     port: parsePort(env.PORT),
   };

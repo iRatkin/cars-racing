@@ -42,6 +42,18 @@ export type TelegramSuccessfulPaymentWebhookUpdate = {
   };
 };
 
+export type TelegramBotCommandUpdate = {
+  update_id: number;
+  message: {
+    message_id: number;
+    from: TelegramUserIdentity;
+    chat: { id: number | string; [key: string]: unknown };
+    text: string;
+    entities: Array<{ type: string; offset: number; length: number }>;
+    [key: string]: unknown;
+  };
+};
+
 export type SupportedTelegramWebhookUpdate =
   | TelegramPreCheckoutWebhookUpdate
   | TelegramSuccessfulPaymentWebhookUpdate;
@@ -116,6 +128,33 @@ export function isTelegramSuccessfulPaymentWebhookUpdate(
     typeof value.message.successful_payment.currency === "string" &&
     typeof value.message.successful_payment.total_amount === "number"
   );
+}
+
+export function isTelegramBotCommandUpdate(
+  value: unknown,
+  command: string
+): value is TelegramBotCommandUpdate {
+  if (
+    !isObject(value) ||
+    typeof value.update_id !== "number" ||
+    !isObject(value.message) ||
+    typeof value.message.text !== "string" ||
+    !Array.isArray(value.message.entities)
+  ) {
+    return false;
+  }
+
+  const hasBotCommandEntity = value.message.entities.some(
+    (e): e is { type: string; offset: number; length: number } =>
+      isObject(e) && e.type === "bot_command" && e.offset === 0
+  );
+
+  if (!hasBotCommandEntity) {
+    return false;
+  }
+
+  const text = value.message.text as string;
+  return text === command || text.startsWith(`${command}@`);
 }
 
 export function isSupportedTelegramWebhookUpdate(
