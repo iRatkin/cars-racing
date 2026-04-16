@@ -140,7 +140,7 @@ export async function answerPreCheckoutQuery(
 export interface TelegramSendMessageInput {
   chatId: number | string;
   text: string;
-  replyMarkup?: TelegramInlineKeyboardMarkup;
+  replyMarkup?: TelegramReplyMarkup;
 }
 
 export interface TelegramInlineKeyboardMarkup {
@@ -153,6 +153,29 @@ export interface TelegramInlineKeyboardButton {
   url?: string;
   callback_data?: string;
 }
+
+export interface TelegramReplyKeyboardMarkup {
+  keyboard: TelegramReplyKeyboardButton[][];
+  resize_keyboard?: boolean;
+  one_time_keyboard?: boolean;
+  is_persistent?: boolean;
+  input_field_placeholder?: string;
+  selective?: boolean;
+}
+
+export interface TelegramReplyKeyboardButton {
+  text: string;
+}
+
+export interface TelegramReplyKeyboardRemove {
+  remove_keyboard: true;
+  selective?: boolean;
+}
+
+export type TelegramReplyMarkup =
+  | TelegramInlineKeyboardMarkup
+  | TelegramReplyKeyboardMarkup
+  | TelegramReplyKeyboardRemove;
 
 export async function sendTelegramMessage(
   options: TelegramInvoiceLinkClientOptions,

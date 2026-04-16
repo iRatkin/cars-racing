@@ -1,179 +1,178 @@
 import type {
   TelegramInlineKeyboardButton,
-  TelegramInlineKeyboardMarkup
+  TelegramInlineKeyboardMarkup,
+  TelegramReplyKeyboardButton,
+  TelegramReplyKeyboardMarkup
 } from "../telegram/invoice-link.js";
 import type { CatalogCar } from "../cars-catalog/cars-catalog-repository.js";
 import type { Season } from "../seasons/seasons-domain.js";
 
-type ButtonRow = TelegramInlineKeyboardButton[];
+export const ADMIN_BTN = {
+  MAIN_USERS: "👤 Users",
+  MAIN_CARS: "🚗 Cars",
+  MAIN_SEASONS: "🏁 Seasons",
+  MAIN_STATS: "📊 Stats",
+  BACK: "« Back",
+  CANCEL: "❌ Cancel",
+  USERS_FIND: "🔍 Find User",
+  USER_ADD_100: "➕ 100 RC",
+  USER_ADD_500: "➕ 500 RC",
+  USER_ADD_CUSTOM: "➕ Custom RC",
+  USER_SUB_100: "➖ 100 RC",
+  USER_SUB_500: "➖ 500 RC",
+  USER_SUB_CUSTOM: "➖ Custom RC",
+  USER_GIVE_CAR: "🚗 Give Car",
+  USER_SET_BALANCE: "💰 Set Balance",
+  CARS_ADD: "➕ Add Car",
+  CAR_ACTIVATE: "🟢 Activate",
+  CAR_DEACTIVATE: "🔴 Deactivate",
+  CAR_SET_PRICE: "✏️ Set Price",
+  CAR_SET_TITLE: "✏️ Set Title",
+  SEASONS_CREATE: "➕ Create Season",
+  SEASON_EDIT_TITLE: "✏️ Title",
+  SEASON_EDIT_MAP: "✏️ Map",
+  SEASON_EDIT_STARTS: "✏️ Starts",
+  SEASON_EDIT_ENDS: "✏️ Ends",
+  SEASON_EDIT_FEE: "✏️ Entry Fee",
+  SEASON_FINISH: "🏁 Finish Now",
+  CONFIRM_CREATE: "✅ Create",
+  CONFIRM_FINISH: "✅ Finish Now",
+  PURCHASABLE_YES: "✅ Yes",
+  PURCHASABLE_NO: "❌ No"
+} as const;
 
-export function buildMainMenuKeyboard(): TelegramInlineKeyboardMarkup {
+type ReplyRow = TelegramReplyKeyboardButton[];
+
+export function buildMainReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([
+    [ADMIN_BTN.MAIN_USERS, ADMIN_BTN.MAIN_CARS],
+    [ADMIN_BTN.MAIN_SEASONS, ADMIN_BTN.MAIN_STATS]
+  ]);
+}
+
+export function buildUsersMenuReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([[ADMIN_BTN.USERS_FIND], [ADMIN_BTN.BACK]]);
+}
+
+export function buildUserReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([
+    [ADMIN_BTN.USER_ADD_100, ADMIN_BTN.USER_ADD_500, ADMIN_BTN.USER_ADD_CUSTOM],
+    [ADMIN_BTN.USER_SUB_100, ADMIN_BTN.USER_SUB_500, ADMIN_BTN.USER_SUB_CUSTOM],
+    [ADMIN_BTN.USER_GIVE_CAR, ADMIN_BTN.USER_SET_BALANCE],
+    [ADMIN_BTN.BACK]
+  ]);
+}
+
+export function buildCarsReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([[ADMIN_BTN.CARS_ADD], [ADMIN_BTN.BACK]]);
+}
+
+export function buildCarDetailReplyKeyboard(isActive: boolean): TelegramReplyKeyboardMarkup {
+  const toggle = isActive ? ADMIN_BTN.CAR_DEACTIVATE : ADMIN_BTN.CAR_ACTIVATE;
+  return replyKeyboard([
+    [toggle, ADMIN_BTN.CAR_SET_PRICE, ADMIN_BTN.CAR_SET_TITLE],
+    [ADMIN_BTN.BACK]
+  ]);
+}
+
+export function buildSeasonsReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([[ADMIN_BTN.SEASONS_CREATE], [ADMIN_BTN.BACK]]);
+}
+
+export function buildSeasonDetailReplyKeyboard(canFinishNow: boolean): TelegramReplyKeyboardMarkup {
+  const rows: ReplyRow[] = [
+    [btn(ADMIN_BTN.SEASON_EDIT_TITLE), btn(ADMIN_BTN.SEASON_EDIT_MAP)],
+    [btn(ADMIN_BTN.SEASON_EDIT_STARTS), btn(ADMIN_BTN.SEASON_EDIT_ENDS)],
+    [btn(ADMIN_BTN.SEASON_EDIT_FEE)]
+  ];
+  if (canFinishNow) {
+    rows.push([btn(ADMIN_BTN.SEASON_FINISH)]);
+  }
+  rows.push([btn(ADMIN_BTN.BACK)]);
   return {
-    inline_keyboard: [
-      [
-        { text: "👤 Users", callback_data: "menu_users" },
-        { text: "🚗 Cars", callback_data: "menu_cars" }
-      ],
-      [
-        { text: "🏁 Seasons", callback_data: "menu_seasons" },
-        { text: "📊 Stats", callback_data: "menu_stats" }
-      ]
-    ]
+    keyboard: rows,
+    resize_keyboard: true,
+    is_persistent: true
   };
 }
 
-export function buildUsersMenuKeyboard(): TelegramInlineKeyboardMarkup {
-  return {
-    inline_keyboard: [
-      [{ text: "🔍 Find User", callback_data: "finduser_prompt" }],
-      [{ text: "« Back to Main Menu", callback_data: "main_menu" }]
-    ]
-  };
+export function buildStatsReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([[ADMIN_BTN.BACK]]);
 }
 
-export function buildUserKeyboard(userId: string): TelegramInlineKeyboardMarkup {
-  return {
-    inline_keyboard: [
-      [
-        { text: "➕ 100 RC", callback_data: `addcoins:${userId}:100` },
-        { text: "➕ 500 RC", callback_data: `addcoins:${userId}:500` },
-        { text: "➕ Custom", callback_data: `addcoins_prompt:${userId}` }
-      ],
-      [
-        { text: "➖ 100 RC", callback_data: `subcoins:${userId}:100` },
-        { text: "➖ 500 RC", callback_data: `subcoins:${userId}:500` },
-        { text: "➖ Custom", callback_data: `subcoins_prompt:${userId}` }
-      ],
-      [
-        { text: "🚗 Give Car", callback_data: `givecar_prompt:${userId}` },
-        { text: "💰 Set Balance", callback_data: `setbalance_prompt:${userId}` }
-      ],
-      [{ text: "« Back to Users Menu", callback_data: "menu_users" }]
-    ]
-  };
+export function buildCancelReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([[ADMIN_BTN.CANCEL]]);
 }
 
-export function buildCarsCatalogKeyboard(cars: CatalogCar[]): TelegramInlineKeyboardMarkup {
-  const editButtons: TelegramInlineKeyboardButton[] = cars.map((car) => ({
+export function buildGiveCarReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([[ADMIN_BTN.BACK]]);
+}
+
+export function buildAddCarPurchasableReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([
+    [ADMIN_BTN.PURCHASABLE_YES, ADMIN_BTN.PURCHASABLE_NO],
+    [ADMIN_BTN.CANCEL]
+  ]);
+}
+
+export function buildConfirmCreateSeasonReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([[ADMIN_BTN.CONFIRM_CREATE], [ADMIN_BTN.CANCEL]]);
+}
+
+export function buildConfirmFinishSeasonReplyKeyboard(): TelegramReplyKeyboardMarkup {
+  return replyKeyboard([[ADMIN_BTN.CONFIRM_FINISH], [ADMIN_BTN.CANCEL]]);
+}
+
+export function buildCarsInlineList(cars: CatalogCar[]): TelegramInlineKeyboardMarkup | null {
+  if (cars.length === 0) {
+    return null;
+  }
+  const buttons: TelegramInlineKeyboardButton[] = cars.map((car) => ({
     text: `✏️ ${car.carId}`,
     callback_data: `editcar:${car.carId}`
   }));
-
-  const rows: ButtonRow[] = chunkInPairs(editButtons);
-  rows.push([{ text: "➕ Add Car", callback_data: "addcar_prompt" }]);
-  rows.push([{ text: "« Back to Main Menu", callback_data: "main_menu" }]);
-
-  return { inline_keyboard: rows };
+  return { inline_keyboard: chunkInPairs(buttons) };
 }
 
-export function buildCarDetailKeyboard(
-  carId: string,
-  isActive: boolean
-): TelegramInlineKeyboardMarkup {
-  const toggleText = isActive ? "🔴 Deactivate" : "🟢 Activate";
-  return {
-    inline_keyboard: [
-      [
-        { text: toggleText, callback_data: `togglecar:${carId}` },
-        { text: "✏️ Set Price", callback_data: `setprice_prompt:${carId}` },
-        { text: "✏️ Set Title", callback_data: `settitle_prompt:${carId}` }
-      ],
-      [{ text: "« Back to Catalog", callback_data: "menu_cars" }]
-    ]
-  };
-}
-
-export function buildSeasonsKeyboard(seasons: Season[]): TelegramInlineKeyboardMarkup {
-  const editButtons: TelegramInlineKeyboardButton[] = seasons.map((s) => ({
+export function buildSeasonsInlineList(seasons: Season[]): TelegramInlineKeyboardMarkup | null {
+  if (seasons.length === 0) {
+    return null;
+  }
+  const buttons: TelegramInlineKeyboardButton[] = seasons.map((s) => ({
     text: `✏️ ${s.title}`,
     callback_data: `editseason:${s.seasonId}`
   }));
-
-  const rows: ButtonRow[] = chunkInPairs(editButtons);
-  rows.push([{ text: "➕ Create Season", callback_data: "createseason_prompt" }]);
-  rows.push([{ text: "« Back to Main Menu", callback_data: "main_menu" }]);
-
-  return { inline_keyboard: rows };
+  return { inline_keyboard: chunkInPairs(buttons) };
 }
 
-export function buildSeasonDetailKeyboard(
-  seasonId: string,
-  canFinishNow: boolean
-): TelegramInlineKeyboardMarkup {
-  const rows: ButtonRow[] = [
-    [
-      { text: "✏️ Title", callback_data: `editseason_title_prompt:${seasonId}` },
-      { text: "✏️ Map", callback_data: `editseason_mapid_prompt:${seasonId}` }
-    ],
-    [
-      { text: "✏️ Starts", callback_data: `editseason_starts_prompt:${seasonId}` },
-      { text: "✏️ Ends", callback_data: `editseason_ends_prompt:${seasonId}` }
-    ],
-    [{ text: "✏️ Entry Fee", callback_data: `editseason_fee_prompt:${seasonId}` }]
-  ];
-  if (canFinishNow) {
-    rows.push([{ text: "🏁 Finish Now", callback_data: `finishseason_confirm:${seasonId}` }]);
-  }
-  rows.push([{ text: "« Back to Seasons", callback_data: "menu_seasons" }]);
-  return { inline_keyboard: rows };
-}
-
-export function buildGiveCarSelectionKeyboard(
+export function buildGiveCarInlineList(
   userId: string,
   cars: CatalogCar[]
-): TelegramInlineKeyboardMarkup {
+): TelegramInlineKeyboardMarkup | null {
+  if (cars.length === 0) {
+    return null;
+  }
   const buttons: TelegramInlineKeyboardButton[] = cars.map((car) => ({
     text: car.title,
     callback_data: `givecar:${userId}:${car.carId}`
   }));
-
-  const rows: ButtonRow[] = chunkInPairs(buttons);
-  rows.push([{ text: "« Back", callback_data: `user_back:${userId}` }]);
-  return { inline_keyboard: rows };
+  return { inline_keyboard: chunkInPairs(buttons) };
 }
 
-export function buildConfirmCreateSeasonKeyboard(): TelegramInlineKeyboardMarkup {
+function replyKeyboard(rows: string[][]): TelegramReplyKeyboardMarkup {
   return {
-    inline_keyboard: [
-      [
-        { text: "✅ Create", callback_data: "createseason_confirm" },
-        { text: "❌ Cancel", callback_data: "menu_seasons" }
-      ]
-    ]
+    keyboard: rows.map((row) => row.map(btn)),
+    resize_keyboard: true,
+    is_persistent: true
   };
 }
 
-export function buildConfirmFinishSeasonKeyboard(seasonId: string): TelegramInlineKeyboardMarkup {
-  return {
-    inline_keyboard: [
-      [
-        { text: "✅ Finish Now", callback_data: `finishseason_apply:${seasonId}` },
-        { text: "❌ Cancel", callback_data: `editseason:${seasonId}` }
-      ]
-    ]
-  };
+function btn(text: string): TelegramReplyKeyboardButton {
+  return { text };
 }
 
-export function buildAddCarPurchasableKeyboard(): TelegramInlineKeyboardMarkup {
-  return {
-    inline_keyboard: [
-      [
-        { text: "✅ Yes", callback_data: "addcar_purchasable:yes" },
-        { text: "❌ No", callback_data: "addcar_purchasable:no" }
-      ],
-      [{ text: "« Cancel", callback_data: "menu_cars" }]
-    ]
-  };
-}
-
-export function cancelInlineKeyboard(backCallback: string): TelegramInlineKeyboardMarkup {
-  return {
-    inline_keyboard: [[{ text: "❌ Cancel", callback_data: backCallback }]]
-  };
-}
-
-function chunkInPairs(buttons: TelegramInlineKeyboardButton[]): ButtonRow[] {
-  const rows: ButtonRow[] = [];
+function chunkInPairs(buttons: TelegramInlineKeyboardButton[]): TelegramInlineKeyboardButton[][] {
+  const rows: TelegramInlineKeyboardButton[][] = [];
   for (let i = 0; i < buttons.length; i += 2) {
     rows.push(buttons.slice(i, i + 2));
   }
