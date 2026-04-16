@@ -115,6 +115,27 @@ export function formatStats(
   );
 }
 
+export function formatTodayUtmReport(
+  utmStats: UtmSourceCount[],
+  since: Date
+): string {
+  const dateLabel = formatDateShort(since);
+  const total = utmStats.reduce((sum, stat) => sum + stat.count, 0);
+  const lines =
+    utmStats.length === 0
+      ? "   (no new users today)"
+      : utmStats
+          .map((stat) => `   ${escapeHtml(stat.utmSource)} — ${stat.count}`)
+          .join("\n");
+
+  return (
+    `📊 <b>Today's New Users by UTM</b>\n` +
+    `<i>Since ${dateLabel} 00:00 UTC</i>\n\n` +
+    `Total: <b>${total}</b>\n\n` +
+    `${lines}`
+  );
+}
+
 function formatDateShort(date: Date): string {
   return date.toISOString().slice(0, 10);
 }

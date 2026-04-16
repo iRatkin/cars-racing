@@ -66,7 +66,8 @@ Admin bot:
 - **Navigation model**: reply-keyboard-based. Every menu/detail screen attaches a persistent reply keyboard (`is_persistent: true`, `resize_keyboard: true`) to the chat; button taps are plain text messages matched against the current session view. Inline keyboards are used **only** for three dynamic lists where the item IDs are dynamic: cars catalog (`editcar:<carId>`), seasons list (`editseason:<seasonId>`), and give-car picker (`givecar:<userId>:<carId>`). Each list view sends two messages: one carrying the reply keyboard (e.g. `[➕ Add Car] [« Back]`), the other carrying the inline list.
 - **Session state** (in-memory `Map<adminId, AdminSession>`, 30-minute TTL, periodic sweep): `{ view: AdminView, pending: PendingAdminAction | null, expiresAt }`. `AdminView` union tracks the currently rendered screen (`main` / `users_menu` / `user` / `cars` / `car` / `give_car` / `seasons` / `season` / `stats`) plus wizard states (`wizard { cancelTo }`, `addcar_purchasable`, `confirm_create_season`, `confirm_finish_season`). Inbound text is dispatched by current view + label; sessions are lost on process restart.
 - **Wizards** (multi-step text input): set view to `wizard { cancelTo }` and show a `[❌ Cancel]` reply keyboard. Cancel returns to `cancelTo`. `pending` entries have their own 5-minute TTL (`ADMIN_PENDING_ACTION_TTL_MS`). Confirmation steps with buttons (`addcar_purchasable`, `confirm_create_season`, `confirm_finish_season`) use dedicated reply keyboards.
-- **Users export**: `📥 Export Users` button in the Users menu renders an XLSX document (via `exceljs`) with profile fields, balance, owned cars and UTM attribution for every user, and sends it as a Telegram document via `sendDocument` (multipart/form-data). See `admin-users-export.ts`.
+- **Users export**: `📥 Export Users` button in the Users menu renders a minimal XLSX document (via `exceljs`) with a single `userId` column (one row per user) and sends it as a Telegram document via `sendDocument` (multipart/form-data). See `admin-users-export.ts`.
+- **Today UTM report**: `📈 Today UTM` button in the Users menu aggregates users with `createdAt >= startOfUtcDay(now)` grouped by `utmSource` (missing source is bucketed as `direct`) and replies with an HTML-formatted breakdown via `formatTodayUtmReport`.
 - All admin text is rendered with `parse_mode: "HTML"`; all user/catalog/season strings are HTML-escaped via `escapeHtml()`.
 - All numeric admin input is parsed by strict validators (`parseIntegerStrict`, `parseNonNegativeIntegerStrict`, `parsePositiveIntegerStrict`, `parsePrizePoolShareStrict`); dates use `parseDateUtcStrict` (format `YYYY-MM-DD HH:MM` interpreted as UTC via `Date.UTC`).
 - `addRaceCoins` and `setRaceCoinsBalance` reject negative values at the repository level. Admin "subtract" always goes through `spendRaceCoins` (with `$gte`-guard) so the balance never goes below 0.
@@ -217,7 +218,7 @@ Mongo:
 Domain:
 - `src/modules/auth/telegram-init-data.ts`: Telegram Mini App initData validation.
 - `src/modules/users/starter-car.ts`: derived starter car state.
-- `src/modules/users/users-repository.ts`: `AppUser` type, `UsersRepository` interface (including `getAllUsers()` used by admin export), `UtmSourceCount` type.
+- `src/modules/users/users-repository.ts`: `AppUser` type, `UsersRepository` interface (including `getAllUsers()` used by admin export and `getUtmSourcesSince(date)` used by the admin Today-UTM report), `UtmSourceCount` type.
 - `src/modules/cars-catalog/cars-catalog.ts`: `PHASE_0_CAR_CATALOG` seed data array (source of truth for initial Mongo seed only).
 - `src/modules/cars-catalog/cars-catalog-repository.ts`: `CatalogCar` type, `CarsCatalogRepository` interface, `canPurchaseCarServerSide`.
 - `src/modules/race-coins/race-coins-catalog.ts`: race coins bundles available for purchase with Telegram Stars.
@@ -240,7 +241,7 @@ Admin module (`src/modules/admin/`):
 - `admin-format.ts`: HTML-safe formatters for user/car/season/stats cards.
 - `admin-keyboards.ts`: `ADMIN_BTN` label constants, reply-keyboard builders for all menus/detail cards/wizards/confirmations, and inline-keyboard builders for the three dynamic lists (`buildCarsInlineList`, `buildSeasonsInlineList`, `buildGiveCarInlineList`).
 - `admin-view-renderer.ts`: `renderAdminView(deps, chatId, view)` — centralized renderer. For list views (`cars`, `seasons`, `give_car`) sends two messages: reply-keyboard summary + inline list (omitted when empty).
-- `admin-users-export.ts`: `buildUsersExportWorkbook(users)` builds an in-memory XLSX via `exceljs` (columns: profile, balance, owned cars, UTM fields; frozen header row); `buildUsersExportFileName(now)` makes a timestamped file name; exports `ADMIN_USERS_EXPORT_MIME`.
+- `admin-users-export.ts`: `buildUsersExportWorkbook(users)` builds an in-memory XLSX via `exceljs` with a single bold, frozen `userId` column (one row per user); `buildUsersExportFileName(now)` makes a timestamped file name; exports `ADMIN_USERS_EXPORT_MIME`.
 - `admin-commands.ts`: `AdminDeps` (alias of `AdminRendererDeps`), slash-command handlers (`handleUserCommand`, `handleCarsCommand`, `handleSeasonsCommand`, `handleStatsCommand`, `handleStartCommand`) returning `AdminCommandResult { view }` so the bot handler can seed the session.
 - `admin-callbacks.ts`: `handleAdminCallback` — handles **only** inline callbacks from dynamic lists (`editcar`, `editseason`, `givecar`); acks the callback and renders the resulting detail view with its reply keyboard.
 - `admin-bot-handler.ts`: `createAdminBotHandler(deps)` — top-level webhook dispatcher. Owns the `sessions` map; routes text by current view → button label → action (or wizard step when `pending` is set); delegates inline callbacks. Houses wizard logic (add car, create season, edit fields) and the users-export action (`exportUsersToExcel`).
@@ -372,7 +373,7 @@ Car catalog document shape, see `MongoCarDocument`:
 - Commands: `/start`, `/menu` (open main menu), `/user <id|username>` (user card with action keyboard), `/cars` (catalog list), `/seasons` (seasons list), `/stats` (users count + top-10 UTM + purchases summary). Each command sets the session view to the corresponding screen.
 - **Reply-keyboard flows** (text input matched against current view's button labels):
   - Main: `👤 Users` / `🚗 Cars` / `🏁 Seasons` / `📊 Stats`.
-  - Users menu: `🔍 Find User` (wizard prompt), `📥 Export Users` (sends XLSX document via `sendDocument`), `« Back`.
+  - Users menu: `🔍 Find User` (wizard prompt), `📥 Export Users` (sends a single-column `userId` XLSX via `sendDocument`), `📈 Today UTM` (aggregates new users since start of UTC day by `utmSource`), `« Back`.
   - User detail: `➕ 100/500/Custom RC`, `➖ 100/500/Custom RC`, `🚗 Give Car` (opens give-car picker with inline list), `💰 Set Balance`, `« Back`.
   - Cars: `➕ Add Car` (multi-step wizard: carId → title → price → isPurchasable Yes/No via reply keyboard; `sortOrder` auto-assigned to `max+1`), `« Back`.
   - Car detail: `🟢/🔴 Activate/Deactivate`, `✏️ Set Price`, `✏️ Set Title`, `« Back`.

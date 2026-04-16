@@ -182,6 +182,29 @@ export class MongoUsersRepository implements UsersRepository {
     return this.collection.countDocuments({});
   }
 
+  async getUtmSourcesSince(since: Date): Promise<UtmSourceCount[]> {
+    const rows = await this.collection
+      .aggregate<UtmAggregateRow>([
+        { $match: { createdAt: { $gte: since } } },
+        {
+          $group: {
+            _id: { $ifNull: ["$utmSource", "direct"] },
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            utmSource: "$_id",
+            count: 1
+          }
+        },
+        { $sort: { count: -1 } }
+      ])
+      .toArray();
+    return rows.map((row) => ({ utmSource: row.utmSource, count: row.count }));
+  }
+
   async getAllUsers(): Promise<AppUser[]> {
     const documents = await this.collection
       .find({}, { sort: { createdAt: 1 } })

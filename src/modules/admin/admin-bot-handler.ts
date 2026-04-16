@@ -28,7 +28,11 @@ import {
   type AdminView,
   type AdminViewBase
 } from "./admin-session.js";
-import { formatCarDetail, formatSeasonDetail } from "./admin-format.js";
+import {
+  formatCarDetail,
+  formatSeasonDetail,
+  formatTodayUtmReport
+} from "./admin-format.js";
 import {
   ADMIN_BTN,
   buildAddCarPurchasableReplyKeyboard,
@@ -249,6 +253,10 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
       }
       if (text === ADMIN_BTN.USERS_EXPORT) {
         await exportUsersToExcel(chatId);
+        return;
+      }
+      if (text === ADMIN_BTN.USERS_TODAY_UTM) {
+        await showTodayUtmReport(chatId);
         return;
       }
       if (text === ADMIN_BTN.BACK) {
@@ -976,6 +984,24 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
     }
   }
 
+  async function showTodayUtmReport(chatId: number): Promise<void> {
+    try {
+      const since = startOfUtcDay(new Date());
+      const stats = await deps.usersRepository.getUtmSourcesSince(since);
+      await sendTelegramMessage(deps.telegramOptions, {
+        chatId,
+        text: formatTodayUtmReport(stats, since)
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.logger?.warn({ err: message }, "admin: today utm report failed");
+      await sendTelegramMessage(deps.telegramOptions, {
+        chatId,
+        text: `❌ Failed to load today's UTM report: ${escapeHtml(message)}`
+      });
+    }
+  }
+
   async function exportUsersToExcel(chatId: number): Promise<void> {
     try {
       const users = await deps.usersRepository.getAllUsers();
@@ -1097,4 +1123,10 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
     }
     return value;
   }
+}
+
+function startOfUtcDay(now: Date): Date {
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)
+  );
 }
