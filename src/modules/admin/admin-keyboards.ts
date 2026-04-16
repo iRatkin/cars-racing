@@ -15,6 +15,7 @@ export const ADMIN_BTN = {
   BACK: "« Back",
   CANCEL: "❌ Cancel",
   USERS_FIND: "🔍 Find User",
+  USERS_EXPORT: "📥 Export Users",
   USER_ADD_100: "➕ 100 RC",
   USER_ADD_500: "➕ 500 RC",
   USER_ADD_CUSTOM: "➕ Custom RC",
@@ -51,7 +52,11 @@ export function buildMainReplyKeyboard(): TelegramReplyKeyboardMarkup {
 }
 
 export function buildUsersMenuReplyKeyboard(): TelegramReplyKeyboardMarkup {
-  return replyKeyboard([[ADMIN_BTN.USERS_FIND], [ADMIN_BTN.BACK]]);
+  return replyKeyboard([
+    [ADMIN_BTN.USERS_FIND],
+    [ADMIN_BTN.USERS_EXPORT],
+    [ADMIN_BTN.BACK]
+  ]);
 }
 
 export function buildUserReplyKeyboard(): TelegramReplyKeyboardMarkup {

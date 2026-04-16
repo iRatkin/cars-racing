@@ -305,6 +305,72 @@ export async function editMessageText(
 
 const defaultTelegramFetch: TelegramFetch = (input, init) => fetch(input, init);
 
+export interface TelegramSendDocumentInput {
+  chatId: number | string;
+  fileName: string;
+  fileBuffer: Uint8Array;
+  mimeType: string;
+  caption?: string;
+}
+
+export interface TelegramSendDocumentOptions {
+  botToken: string;
+  fetchImpl?: (input: string, init: { method: "POST"; body: FormData }) => Promise<{
+    ok: boolean;
+    status?: number;
+    json: () => Promise<unknown>;
+  }>;
+}
+
+/**
+ * Uploads a binary document to a Telegram chat via `sendDocument`.
+ * Uses multipart/form-data directly rather than the JSON `TelegramFetch`
+ * abstraction since Telegram requires the file as a form field.
+ */
+export async function sendTelegramDocument(
+  options: TelegramSendDocumentOptions,
+  input: TelegramSendDocumentInput
+): Promise<void> {
+  const form = new FormData();
+  form.append("chat_id", String(input.chatId));
+  if (input.caption) {
+    form.append("caption", input.caption);
+    form.append("parse_mode", "HTML");
+  }
+  const bytes = new Uint8Array(input.fileBuffer.byteLength);
+  bytes.set(input.fileBuffer);
+  const blob = new Blob([bytes], { type: input.mimeType });
+  form.append("document", blob, input.fileName);
+
+  const fetchImpl = options.fetchImpl ?? defaultDocumentFetch;
+  const response = await fetchImpl(
+    `https://api.telegram.org/bot${options.botToken}/sendDocument`,
+    { method: "POST", body: form }
+  );
+
+  let responseBody: TelegramApiResponse;
+  try {
+    responseBody = await response.json() as TelegramApiResponse;
+  } catch {
+    throw new Error(
+      `Telegram sendDocument failed: HTTP ${response.status} (non-JSON response)`
+    );
+  }
+
+  if (!response.ok || !responseBody.ok) {
+    throw new Error(
+      `Telegram sendDocument failed: ${
+        responseBody.description ?? `HTTP ${response.status}`
+      }`
+    );
+  }
+}
+
+const defaultDocumentFetch: NonNullable<TelegramSendDocumentOptions["fetchImpl"]> = (
+  input,
+  init
+) => fetch(input, init);
+
 interface TelegramCreateInvoiceLinkResponse {
   ok: boolean;
   result?: string;

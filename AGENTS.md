@@ -63,8 +63,10 @@ Admin bot:
 - Access inside the handler is further gated by the `ADMIN_TELEGRAM_IDS` whitelist; unauthorized senders are silently ignored (warn logged).
 - Admin operations call existing repositories directly (no HTTP round-trips to the public API).
 - Supports commands `/start`, `/menu`, `/user <id|username>`, `/cars`, `/seasons`, `/stats`.
-- Inline-keyboard flows for: find/view user, add/subtract/set race coins, give car; list/edit/create/deactivate/activate cars; list/create/edit/finish-now seasons; stats (users count, top-10 UTM sources, purchase summary).
-- Conversational input uses an in-memory `Map<string, PendingAdminAction>` scoped to the handler closure; TTL 5 minutes; opportunistic `setInterval` sweep; pending state is lost on process restart.
+- **Navigation model**: reply-keyboard-based. Every menu/detail screen attaches a persistent reply keyboard (`is_persistent: true`, `resize_keyboard: true`) to the chat; button taps are plain text messages matched against the current session view. Inline keyboards are used **only** for three dynamic lists where the item IDs are dynamic: cars catalog (`editcar:<carId>`), seasons list (`editseason:<seasonId>`), and give-car picker (`givecar:<userId>:<carId>`). Each list view sends two messages: one carrying the reply keyboard (e.g. `[➕ Add Car] [« Back]`), the other carrying the inline list.
+- **Session state** (in-memory `Map<adminId, AdminSession>`, 30-minute TTL, periodic sweep): `{ view: AdminView, pending: PendingAdminAction | null, expiresAt }`. `AdminView` union tracks the currently rendered screen (`main` / `users_menu` / `user` / `cars` / `car` / `give_car` / `seasons` / `season` / `stats`) plus wizard states (`wizard { cancelTo }`, `addcar_purchasable`, `confirm_create_season`, `confirm_finish_season`). Inbound text is dispatched by current view + label; sessions are lost on process restart.
+- **Wizards** (multi-step text input): set view to `wizard { cancelTo }` and show a `[❌ Cancel]` reply keyboard. Cancel returns to `cancelTo`. `pending` entries have their own 5-minute TTL (`ADMIN_PENDING_ACTION_TTL_MS`). Confirmation steps with buttons (`addcar_purchasable`, `confirm_create_season`, `confirm_finish_season`) use dedicated reply keyboards.
+- **Users export**: `📥 Export Users` button in the Users menu renders an XLSX document (via `exceljs`) with profile fields, balance, owned cars and UTM attribution for every user, and sends it as a Telegram document via `sendDocument` (multipart/form-data). See `admin-users-export.ts`.
 - All admin text is rendered with `parse_mode: "HTML"`; all user/catalog/season strings are HTML-escaped via `escapeHtml()`.
 - All numeric admin input is parsed by strict validators (`parseIntegerStrict`, `parseNonNegativeIntegerStrict`, `parsePositiveIntegerStrict`, `parsePrizePoolShareStrict`); dates use `parseDateUtcStrict` (format `YYYY-MM-DD HH:MM` interpreted as UTC via `Date.UTC`).
 - `addRaceCoins` and `setRaceCoinsBalance` reject negative values at the repository level. Admin "subtract" always goes through `spendRaceCoins` (with `$gte`-guard) so the balance never goes below 0.
@@ -78,6 +80,7 @@ Admin bot:
 - `@fastify/jwt`
 - MongoDB driver 6
 - Zod
+- `exceljs` (admin users XLSX export)
 - Vitest
 - Docker Compose with Mongo 7 (local)
 - Railway with Nixpacks (deployed)
@@ -214,14 +217,14 @@ Mongo:
 Domain:
 - `src/modules/auth/telegram-init-data.ts`: Telegram Mini App initData validation.
 - `src/modules/users/starter-car.ts`: derived starter car state.
-- `src/modules/users/users-repository.ts`: `AppUser` type, `UsersRepository` interface, `UtmSourceCount` type.
+- `src/modules/users/users-repository.ts`: `AppUser` type, `UsersRepository` interface (including `getAllUsers()` used by admin export), `UtmSourceCount` type.
 - `src/modules/cars-catalog/cars-catalog.ts`: `PHASE_0_CAR_CATALOG` seed data array (source of truth for initial Mongo seed only).
 - `src/modules/cars-catalog/cars-catalog-repository.ts`: `CatalogCar` type, `CarsCatalogRepository` interface, `canPurchaseCarServerSide`.
 - `src/modules/race-coins/race-coins-catalog.ts`: race coins bundles available for purchase with Telegram Stars.
 - `src/modules/garage/garage-view.ts`: garage projection.
 - `src/modules/payments/purchase-domain.ts`: purchase retry/grant decisions.
 - `src/modules/payments/purchases-repository.ts`: purchase repository interface (includes `PurchaseStatsSummary` and `getStatsSummary`).
-- `src/modules/telegram/invoice-link.ts`: invoice request body builder, Telegram HTTP client, `answerPreCheckoutQuery`, `sendTelegramMessage`, `answerCallbackQuery`, `editMessageText`.
+- `src/modules/telegram/invoice-link.ts`: invoice request body builder, Telegram HTTP client, `answerPreCheckoutQuery`, `sendTelegramMessage` (JSON, supports inline/reply keyboards via `TelegramReplyMarkup`), `answerCallbackQuery`, `editMessageText` (inline keyboards only — Telegram limitation), `sendTelegramDocument` (multipart/form-data via global `FormData`/`Blob`).
 - `src/modules/telegram/webhook-domain.ts`: webhook update type guards, validators, `isTelegramBotCommandUpdate`, `extractStartCommandPayload`.
 - `src/modules/telegram/webhook-handler.ts`: real webhook handler (`/start` registration + UTM, `pre_checkout_query`, `successful_payment`); accepts optional `miniAppUrl`.
 - `src/modules/seasons/seasons-domain.ts`: season types, leaderboard view types, `computeSeasonStatus`, `canEnterSeason`, `canStartRace`.
@@ -230,14 +233,17 @@ Domain:
 
 Admin module (`src/modules/admin/`):
 - `admin-config.ts`: `PendingAdminAction` + `AdminPendingActionType` union, `parseAdminTelegramIds`, TTL/prize-share constants.
+- `admin-session.ts`: `AdminView` union and `AdminViewBase` subset, `AdminSession` record, session TTL and periodic sweep (`sweepSessions`, `touchSessionExpiry`).
 - `admin-webhook-domain.ts`: type guards `isAdminTextMessageUpdate`, `isAdminCallbackQueryUpdate`, `extractAdminFromId`.
 - `admin-input.ts`: `AdminInputError`, strict parsers (`parseIntegerStrict`, `parseNonNegativeIntegerStrict`, `parsePositiveIntegerStrict`, `parsePrizePoolShareStrict`, `parseDateUtcStrict`, `parseBooleanStrict`), `escapeHtml`.
 - `admin-user-lookup.ts`: `findUserByQuery(usersRepository, raw)` — finds user by `@username`, bare `username` or numeric Telegram ID.
 - `admin-format.ts`: HTML-safe formatters for user/car/season/stats cards.
-- `admin-keyboards.ts`: inline-keyboard builders (main menu, users, cars, seasons, detail cards, confirmation dialogs, add-car purchasable toggle).
-- `admin-commands.ts`: `AdminDeps`, command handlers (`handleUserCommand`, `handleCarsCommand`, `handleSeasonsCommand`, `handleStatsCommand`, `handleStartCommand`).
-- `admin-callbacks.ts`: `handleAdminCallback` — callback-query routing by prefix.
-- `admin-bot-handler.ts`: `createAdminBotHandler(deps)` — top-level webhook dispatcher. Maintains in-memory `pendingActions` map with periodic sweep. Conversational step machine for multi-step flows (add car, create season, edit fields).
+- `admin-keyboards.ts`: `ADMIN_BTN` label constants, reply-keyboard builders for all menus/detail cards/wizards/confirmations, and inline-keyboard builders for the three dynamic lists (`buildCarsInlineList`, `buildSeasonsInlineList`, `buildGiveCarInlineList`).
+- `admin-view-renderer.ts`: `renderAdminView(deps, chatId, view)` — centralized renderer. For list views (`cars`, `seasons`, `give_car`) sends two messages: reply-keyboard summary + inline list (omitted when empty).
+- `admin-users-export.ts`: `buildUsersExportWorkbook(users)` builds an in-memory XLSX via `exceljs` (columns: profile, balance, owned cars, UTM fields; frozen header row); `buildUsersExportFileName(now)` makes a timestamped file name; exports `ADMIN_USERS_EXPORT_MIME`.
+- `admin-commands.ts`: `AdminDeps` (alias of `AdminRendererDeps`), slash-command handlers (`handleUserCommand`, `handleCarsCommand`, `handleSeasonsCommand`, `handleStatsCommand`, `handleStartCommand`) returning `AdminCommandResult { view }` so the bot handler can seed the session.
+- `admin-callbacks.ts`: `handleAdminCallback` — handles **only** inline callbacks from dynamic lists (`editcar`, `editseason`, `givecar`); acks the callback and renders the resulting detail view with its reply keyboard.
+- `admin-bot-handler.ts`: `createAdminBotHandler(deps)` — top-level webhook dispatcher. Owns the `sessions` map; routes text by current view → button label → action (or wizard step when `pending` is set); delegates inline callbacks. Houses wizard logic (add car, create season, edit fields) and the users-export action (`exportUsersToExcel`).
 
 Frontend-ish static asset:
 - `public/miniapp/index.html`
@@ -363,13 +369,19 @@ Car catalog document shape, see `MongoCarDocument`:
 - Verifies `x-telegram-bot-api-secret-token` against `ADMIN_WEBHOOK_SECRET` (timing-safe).
 - Validates update shape via `isAdminCallbackQueryUpdate` / `isAdminTextMessageUpdate`.
 - Checks `from.id` against `ADMIN_TELEGRAM_IDS` whitelist; unauthorized senders are silently ignored (warn logged).
-- Commands: `/start`, `/menu` (open main menu), `/user <id|username>` (user card with action keyboard), `/cars` (catalog list), `/seasons` (seasons list), `/stats` (users count + top-10 UTM + purchases summary).
-- Callback flows:
-  - User: `addcoins`/`subcoins` (fixed amounts + custom prompt), `setbalance_prompt`, `givecar_prompt` → car picker → `givecar`.
-  - Cars: `editcar`, `togglecar`, `setprice_prompt`, `settitle_prompt`, `addcar_prompt` (multi-step wizard: carId → title → price → isPurchasable toggle; `sortOrder` auto-assigned to `max+1`).
-  - Seasons: `editseason` (title, mapId, startsAt, endsAt, entryFee), `createseason_prompt` (multi-step: title → mapId → fee → prize share → starts → ends → confirm), `finishseason_confirm` → `finishseason_apply` (sets `endsAt = now`).
+- Commands: `/start`, `/menu` (open main menu), `/user <id|username>` (user card with action keyboard), `/cars` (catalog list), `/seasons` (seasons list), `/stats` (users count + top-10 UTM + purchases summary). Each command sets the session view to the corresponding screen.
+- **Reply-keyboard flows** (text input matched against current view's button labels):
+  - Main: `👤 Users` / `🚗 Cars` / `🏁 Seasons` / `📊 Stats`.
+  - Users menu: `🔍 Find User` (wizard prompt), `📥 Export Users` (sends XLSX document via `sendDocument`), `« Back`.
+  - User detail: `➕ 100/500/Custom RC`, `➖ 100/500/Custom RC`, `🚗 Give Car` (opens give-car picker with inline list), `💰 Set Balance`, `« Back`.
+  - Cars: `➕ Add Car` (multi-step wizard: carId → title → price → isPurchasable Yes/No via reply keyboard; `sortOrder` auto-assigned to `max+1`), `« Back`.
+  - Car detail: `🟢/🔴 Activate/Deactivate`, `✏️ Set Price`, `✏️ Set Title`, `« Back`.
+  - Seasons: `➕ Create Season` (multi-step: title → mapId → fee → prize share → starts → ends → `✅ Create` / `❌ Cancel` confirm), `« Back`.
+  - Season detail: `✏️ Title/Map/Starts/Ends/Entry Fee`, `🏁 Finish Now` → confirm view (`✅ Finish Now` / `❌ Cancel`), `« Back`.
+  - Stats: `« Back`.
+- **Inline callbacks** (only three, all for dynamic item selection): `editcar:<carId>`, `editseason:<seasonId>`, `givecar:<userId>:<carId>`. After a callback, the handler sends a new message with the detail view's reply keyboard.
 - All outgoing messages use `parse_mode: "HTML"` with escaped user content.
-- Conversational input has a 5-minute TTL; state lives in-memory only, lost on process restart.
+- Wizard `pending` has a 5-minute TTL; the session itself has a 30-minute TTL. All state lives in-memory only, lost on process restart.
 
 `GET /v1/seasons`:
 - Lists seasons with `endsAt > requestNow`, sorted by `startsAt`.

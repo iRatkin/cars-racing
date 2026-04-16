@@ -49,4 +49,5 @@ export interface UsersRepository {
   setRaceCoinsBalance(userId: string, amount: number): Promise<AppUser>;
   getUserCount(): Promise<number>;
   getTopUtmSources(limit: number): Promise<UtmSourceCount[]>;
+  getAllUsers(): Promise<AppUser[]>;
 }

@@ -8,7 +8,12 @@ import {
   type AdminDeps
 } from "./admin-commands.js";
 import { handleAdminCallback, type AdminCallbackLogger } from "./admin-callbacks.js";
-import { sendTelegramMessage } from "../telegram/invoice-link.js";
+import { sendTelegramDocument, sendTelegramMessage } from "../telegram/invoice-link.js";
+import {
+  ADMIN_USERS_EXPORT_MIME,
+  buildUsersExportFileName,
+  buildUsersExportWorkbook
+} from "./admin-users-export.js";
 import {
   ADMIN_DEFAULT_PRIZE_POOL_SHARE,
   ADMIN_PENDING_ACTION_TTL_MS,
@@ -240,6 +245,10 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
           cancelTo: { type: "users_menu" },
           promptText: "🔍 <b>Find User</b>\n\nEnter Telegram ID or Username (with or without @):"
         });
+        return;
+      }
+      if (text === ADMIN_BTN.USERS_EXPORT) {
+        await exportUsersToExcel(chatId);
         return;
       }
       if (text === ADMIN_BTN.BACK) {
@@ -964,6 +973,31 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
         )
       });
       setSession(adminId, { type: "season", seasonId }, null);
+    }
+  }
+
+  async function exportUsersToExcel(chatId: number): Promise<void> {
+    try {
+      const users = await deps.usersRepository.getAllUsers();
+      const buffer = await buildUsersExportWorkbook(users);
+      const fileName = buildUsersExportFileName(new Date());
+      await sendTelegramDocument(
+        { botToken: deps.telegramOptions.botToken },
+        {
+          chatId,
+          fileName,
+          fileBuffer: buffer,
+          mimeType: ADMIN_USERS_EXPORT_MIME,
+          caption: `📥 Users export (${users.length} rows)`
+        }
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.logger?.warn({ err: message }, "admin: users export failed");
+      await sendTelegramMessage(deps.telegramOptions, {
+        chatId,
+        text: `❌ Export failed: ${escapeHtml(message)}`
+      });
     }
   }
 

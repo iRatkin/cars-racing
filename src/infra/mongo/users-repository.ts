@@ -52,6 +52,10 @@ export interface UsersCollection {
   ): Promise<unknown>;
   countDocuments(filter: Record<string, unknown>): Promise<number>;
   aggregate<T extends Document>(pipeline: Document[]): { toArray(): Promise<T[]> };
+  find(
+    filter: Record<string, unknown>,
+    options?: { sort?: Record<string, 1 | -1> }
+  ): { toArray(): Promise<Array<WithId<MongoUserDocument> | MongoUserDocument>> };
 }
 
 export class MongoUsersRepository implements UsersRepository {
@@ -176,6 +180,13 @@ export class MongoUsersRepository implements UsersRepository {
 
   async getUserCount(): Promise<number> {
     return this.collection.countDocuments({});
+  }
+
+  async getAllUsers(): Promise<AppUser[]> {
+    const documents = await this.collection
+      .find({}, { sort: { createdAt: 1 } })
+      .toArray();
+    return documents.map(mapUserDocument);
   }
 
   async getTopUtmSources(limit: number): Promise<UtmSourceCount[]> {
