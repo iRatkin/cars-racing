@@ -32,6 +32,11 @@ export interface UpsertTelegramUserInput {
   photoUrl?: string;
 }
 
+export interface UtmSourceCount {
+  utmSource: string;
+  count: number;
+}
+
 export interface UsersRepository {
   upsertTelegramUser(input: UpsertTelegramUserInput): Promise<AppUser>;
   getUserById(userId: string): Promise<AppUser | null>;
@@ -39,4 +44,9 @@ export interface UsersRepository {
   spendRaceCoins(userId: string, amount: number): Promise<AppUser | null>;
   addOwnedCar(userId: string, carId: string): Promise<AppUser | null>;
   setUtmIfNotSet(telegramUserId: string, utm: UserUtmData): Promise<void>;
+  getUserByTelegramId(telegramUserId: string): Promise<AppUser | null>;
+  getUserByUsername(username: string): Promise<AppUser | null>;
+  setRaceCoinsBalance(userId: string, amount: number): Promise<AppUser>;
+  getUserCount(): Promise<number>;
+  getTopUtmSources(limit: number): Promise<UtmSourceCount[]>;
 }

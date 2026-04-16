@@ -22,6 +22,14 @@ export type CreatePurchaseIntentInput = Omit<
   "purchaseId" | "invoicePayload" | "status" | "isActiveIntent" | "invoiceUrl"
 >;
 
+export interface PurchaseStatsSummary {
+  activeIntents: number;
+  grantedTotal: number;
+  grantedLast24h: number;
+  coinsGrantedTotal: number;
+  starsRevenueTotal: number;
+}
+
 export interface PurchasesRepository {
   findActiveIntent(input: {
     userId: string;
@@ -33,4 +41,5 @@ export interface PurchasesRepository {
   updateStatus(purchaseId: string, status: PurchaseStatus): Promise<void>;
   markGranted(purchaseId: string, telegramPaymentChargeId: string): Promise<void>;
   expireIntent(purchaseId: string): Promise<void>;
+  getStatsSummary(referenceNow: Date): Promise<PurchaseStatsSummary>;
 }

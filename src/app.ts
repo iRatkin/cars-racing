@@ -48,6 +48,7 @@ export interface AppDependencies {
     priceSnapshot: { currency: "XTR"; amount: number };
   }) => Promise<string>;
   handleTelegramWebhook?: (update: unknown) => Promise<void>;
+  adminHandleTelegramWebhook?: (update: unknown) => Promise<void>;
   now?: () => Date;
 }
 
@@ -85,6 +86,7 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
     mongoClient,
     createInvoiceLink,
     handleTelegramWebhook,
+    adminHandleTelegramWebhook,
     now
   } = dependencies;
   const app = Fastify({
@@ -120,6 +122,23 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
       }
 
       await handleTelegramWebhook(request.body);
+      return reply.send({ ok: true });
+    });
+  }
+
+  if (config?.adminConfig && adminHandleTelegramWebhook) {
+    const adminWebhookSecret = config.adminConfig.adminWebhookSecret;
+    app.post("/v1/admin/telegram/webhook", async (request, reply) => {
+      const providedSecret = request.headers["x-telegram-bot-api-secret-token"];
+      const providedSecretValue = Array.isArray(providedSecret)
+        ? providedSecret[0]
+        : providedSecret;
+
+      if (!compareTelegramWebhookSecretToken(providedSecretValue, adminWebhookSecret)) {
+        return reply.code(401).send({ code: "INVALID_WEBHOOK_SECRET" });
+      }
+
+      await adminHandleTelegramWebhook(request.body);
       return reply.send({ ok: true });
     });
   }

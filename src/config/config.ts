@@ -1,3 +1,5 @@
+import { parseAdminTelegramIds } from "../modules/admin/admin-config.js";
+
 export interface AppConfig {
   botToken: string;
   jwtSecret: string;
@@ -6,6 +8,13 @@ export interface AppConfig {
   miniAppUrl: string | undefined;
   env: "dev" | "stage" | "prod";
   port: number;
+  adminConfig?: AdminConfig;
+}
+
+export interface AdminConfig {
+  adminBotToken: string;
+  adminWebhookSecret: string;
+  adminTelegramIds: string[];
 }
 
 type EnvName = AppConfig["env"];
@@ -26,6 +35,19 @@ export function loadConfigFromEnv(
   const mongoUri = requireEnv(env, "MONGO_URI");
   const telegramWebhookSecret = requireEnv(env, "TELEGRAM_WEBHOOK_SECRET");
 
+  const adminBotToken = env.ADMIN_BOT_TOKEN;
+  const adminWebhookSecret = env.ADMIN_WEBHOOK_SECRET;
+  const adminTelegramIdsRaw = env.ADMIN_TELEGRAM_IDS;
+
+  let adminConfig: AdminConfig | undefined;
+  if (adminBotToken && adminWebhookSecret && adminTelegramIdsRaw) {
+    adminConfig = {
+      adminBotToken,
+      adminWebhookSecret,
+      adminTelegramIds: parseAdminTelegramIds(adminTelegramIdsRaw),
+    };
+  }
+
   return {
     botToken,
     jwtSecret,
@@ -34,6 +56,7 @@ export function loadConfigFromEnv(
     miniAppUrl: env.MINI_APP_URL || "https://thelightone.github.io/DriftHTML/",
     env: parseEnvName(env.NODE_ENV),
     port: parsePort(env.PORT),
+    adminConfig,
   };
 }
 

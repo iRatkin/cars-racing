@@ -19,6 +19,7 @@ Target behavior:
 - Telegram POSTs payment webhook updates (`pre_checkout_query`, `successful_payment`) to the backend.
 - Webhook handler approves pre-checkout, grants race coins on successful payment.
 - Bot registers users and captures UTM attribution on `/start` command.
+- Separate admin Telegram bot (behind a second webhook) exposes whitelist-gated management UI for users, cars catalog, seasons, and lightweight analytics.
 - MongoDB is the persistence layer.
 
 ## Current Reality
@@ -54,6 +55,20 @@ Starter car detail:
 - Users are inserted into Mongo with `ownedCarIds: []`, `garageRevision: 0`, and `raceCoinsBalance: 0`.
 - Routes call `ensureStarterCarState()` and return derived starter ownership.
 - Current routes do not persist that derived starter state back to Mongo.
+
+Admin bot:
+- Runs in the **same process** as the main API (no separate service).
+- Registered only when `ADMIN_BOT_TOKEN`, `ADMIN_WEBHOOK_SECRET`, `ADMIN_TELEGRAM_IDS` env vars are all provided — otherwise the admin webhook route is not registered.
+- Webhook route: `POST /v1/admin/telegram/webhook` (separate secret `ADMIN_WEBHOOK_SECRET`, compared via `compareTelegramWebhookSecretToken`).
+- Access inside the handler is further gated by the `ADMIN_TELEGRAM_IDS` whitelist; unauthorized senders are silently ignored (warn logged).
+- Admin operations call existing repositories directly (no HTTP round-trips to the public API).
+- Supports commands `/start`, `/menu`, `/user <id|username>`, `/cars`, `/seasons`, `/stats`.
+- Inline-keyboard flows for: find/view user, add/subtract/set race coins, give car; list/edit/create/deactivate/activate cars; list/create/edit/finish-now seasons; stats (users count, top-10 UTM sources, purchase summary).
+- Conversational input uses an in-memory `Map<string, PendingAdminAction>` scoped to the handler closure; TTL 5 minutes; opportunistic `setInterval` sweep; pending state is lost on process restart.
+- All admin text is rendered with `parse_mode: "HTML"`; all user/catalog/season strings are HTML-escaped via `escapeHtml()`.
+- All numeric admin input is parsed by strict validators (`parseIntegerStrict`, `parseNonNegativeIntegerStrict`, `parsePositiveIntegerStrict`, `parsePrizePoolShareStrict`); dates use `parseDateUtcStrict` (format `YYYY-MM-DD HH:MM` interpreted as UTC via `Date.UTC`).
+- `addRaceCoins` and `setRaceCoinsBalance` reject negative values at the repository level. Admin "subtract" always goes through `spendRaceCoins` (with `$gte`-guard) so the balance never goes below 0.
+- `createSeason` / `updateSeason` validate `endsAt > startsAt`, `entryFee >= 0` (integer), and `prizePoolShare` in `[0, 1]`.
 
 ## Tech Stack
 
@@ -133,6 +148,11 @@ Optional:
 - `NODE_ENV`: `dev`, `stage`, `prod` (also accepts `development`, `staging`, `production`); default `dev`
 - `PORT`: integer; default `3000`
 
+Admin bot (all three must be set together to enable the admin webhook; absence of any one disables the admin route):
+- `ADMIN_BOT_TOKEN`: Telegram bot token for the admin bot (separate bot from `BOT_TOKEN`).
+- `ADMIN_WEBHOOK_SECRET`: secret for `x-telegram-bot-api-secret-token` on `POST /v1/admin/telegram/webhook`.
+- `ADMIN_TELEGRAM_IDS`: comma-separated list of allowed Telegram user IDs (e.g. `123456,789012`); updates from anyone else are silently ignored.
+
 Compose defaults:
 - `BOT_TOKEN=123456:test-token`
 - `JWT_SECRET=dev-jwt-secret-change-me`
@@ -161,13 +181,15 @@ Implemented routes:
 - `POST /v1/seasons/{seasonId}/races/finish`
 - `GET /v1/seasons/{seasonId}/leaderboard`
 - `POST /v1/telegram/webhook`
+- `POST /v1/admin/telegram/webhook` (only when admin env vars are set)
 
 Auth:
 - `GET /v1/garage` requires `Authorization: Bearer <jwt>`.
 - `POST /v1/purchases/coins-intents` requires `Authorization: Bearer <jwt>`.
 - `POST /v1/purchases/buy-car` requires `Authorization: Bearer <jwt>`.
 - All `/v1/seasons` routes require `Authorization: Bearer <jwt>`.
-- Telegram webhook requires `x-telegram-bot-api-secret-token`.
+- Telegram webhook requires `x-telegram-bot-api-secret-token` matching `TELEGRAM_WEBHOOK_SECRET`.
+- Admin webhook requires `x-telegram-bot-api-secret-token` matching `ADMIN_WEBHOOK_SECRET` **and** sender `from.id` present in `ADMIN_TELEGRAM_IDS`.
 
 Common error codes are documented in `swagger.yaml`.
 
@@ -175,9 +197,9 @@ Common error codes are documented in `swagger.yaml`.
 
 Core API:
 - `src/app.ts`: declares Fastify routes and response behavior.
-- `src/runtime.ts`: creates Mongo repositories (users, cars catalog, purchases, seasons, season entries, race runs), Telegram invoice client, webhook handler, passes `MongoClient` for season transactions, then calls `buildApp()`.
+- `src/runtime.ts`: creates Mongo repositories (users, cars catalog, purchases, seasons, season entries, race runs), Telegram invoice client, webhook handler, admin bot handler (when admin env vars are present), passes `MongoClient` for season transactions, then calls `buildApp()`.
 - `src/server.ts`: loads env, connects Mongo, creates indexes, seeds `carsCatalog` if empty, listens on `0.0.0.0`.
-- `src/config/config.ts`: env parsing and validation (accepts NODE_ENV aliases).
+- `src/config/config.ts`: env parsing and validation (accepts NODE_ENV aliases); parses optional `AdminConfig` from `ADMIN_*` env vars.
 
 Mongo:
 - `src/infra/mongo/users-repository.ts`: Mongo implementation of `UsersRepository`.
@@ -192,18 +214,30 @@ Mongo:
 Domain:
 - `src/modules/auth/telegram-init-data.ts`: Telegram Mini App initData validation.
 - `src/modules/users/starter-car.ts`: derived starter car state.
+- `src/modules/users/users-repository.ts`: `AppUser` type, `UsersRepository` interface, `UtmSourceCount` type.
 - `src/modules/cars-catalog/cars-catalog.ts`: `PHASE_0_CAR_CATALOG` seed data array (source of truth for initial Mongo seed only).
 - `src/modules/cars-catalog/cars-catalog-repository.ts`: `CatalogCar` type, `CarsCatalogRepository` interface, `canPurchaseCarServerSide`.
 - `src/modules/race-coins/race-coins-catalog.ts`: race coins bundles available for purchase with Telegram Stars.
 - `src/modules/garage/garage-view.ts`: garage projection.
 - `src/modules/payments/purchase-domain.ts`: purchase retry/grant decisions.
-- `src/modules/payments/purchases-repository.ts`: purchase repository interface.
-- `src/modules/telegram/invoice-link.ts`: invoice request body builder, Telegram HTTP client, `answerPreCheckoutQuery`, `sendTelegramMessage`.
+- `src/modules/payments/purchases-repository.ts`: purchase repository interface (includes `PurchaseStatsSummary` and `getStatsSummary`).
+- `src/modules/telegram/invoice-link.ts`: invoice request body builder, Telegram HTTP client, `answerPreCheckoutQuery`, `sendTelegramMessage`, `answerCallbackQuery`, `editMessageText`.
 - `src/modules/telegram/webhook-domain.ts`: webhook update type guards, validators, `isTelegramBotCommandUpdate`, `extractStartCommandPayload`.
 - `src/modules/telegram/webhook-handler.ts`: real webhook handler (`/start` registration + UTM, `pre_checkout_query`, `successful_payment`); accepts optional `miniAppUrl`.
 - `src/modules/seasons/seasons-domain.ts`: season types, leaderboard view types, `computeSeasonStatus`, `canEnterSeason`, `canStartRace`.
-- `src/modules/seasons/seasons-repository.ts`, `season-entries-repository.ts`, `race-runs-repository.ts`: repository interfaces.
+- `src/modules/seasons/seasons-repository.ts`, `season-entries-repository.ts`, `race-runs-repository.ts`: repository interfaces; `seasons-repository.ts` also exports `validateSeasonDateRange`, `CreateSeasonInput`, `UpdateSeasonInput`.
 - `src/modules/seasons/season-atomic.ts`: result types for transactional season flows.
+
+Admin module (`src/modules/admin/`):
+- `admin-config.ts`: `PendingAdminAction` + `AdminPendingActionType` union, `parseAdminTelegramIds`, TTL/prize-share constants.
+- `admin-webhook-domain.ts`: type guards `isAdminTextMessageUpdate`, `isAdminCallbackQueryUpdate`, `extractAdminFromId`.
+- `admin-input.ts`: `AdminInputError`, strict parsers (`parseIntegerStrict`, `parseNonNegativeIntegerStrict`, `parsePositiveIntegerStrict`, `parsePrizePoolShareStrict`, `parseDateUtcStrict`, `parseBooleanStrict`), `escapeHtml`.
+- `admin-user-lookup.ts`: `findUserByQuery(usersRepository, raw)` — finds user by `@username`, bare `username` or numeric Telegram ID.
+- `admin-format.ts`: HTML-safe formatters for user/car/season/stats cards.
+- `admin-keyboards.ts`: inline-keyboard builders (main menu, users, cars, seasons, detail cards, confirmation dialogs, add-car purchasable toggle).
+- `admin-commands.ts`: `AdminDeps`, command handlers (`handleUserCommand`, `handleCarsCommand`, `handleSeasonsCommand`, `handleStatsCommand`, `handleStartCommand`).
+- `admin-callbacks.ts`: `handleAdminCallback` — callback-query routing by prefix.
+- `admin-bot-handler.ts`: `createAdminBotHandler(deps)` — top-level webhook dispatcher. Maintains in-memory `pendingActions` map with periodic sweep. Conversational step machine for multi-step flows (add car, create season, edit fields).
 
 Frontend-ish static asset:
 - `public/miniapp/index.html`
@@ -325,6 +359,18 @@ Car catalog document shape, see `MongoCarDocument`:
 - `successful_payment`: finds purchase by invoicePayload, grants race coins to user, marks purchase as `granted`.
 - Unsupported update types are silently ignored.
 
+`POST /v1/admin/telegram/webhook` (only when `ADMIN_*` env vars are set):
+- Verifies `x-telegram-bot-api-secret-token` against `ADMIN_WEBHOOK_SECRET` (timing-safe).
+- Validates update shape via `isAdminCallbackQueryUpdate` / `isAdminTextMessageUpdate`.
+- Checks `from.id` against `ADMIN_TELEGRAM_IDS` whitelist; unauthorized senders are silently ignored (warn logged).
+- Commands: `/start`, `/menu` (open main menu), `/user <id|username>` (user card with action keyboard), `/cars` (catalog list), `/seasons` (seasons list), `/stats` (users count + top-10 UTM + purchases summary).
+- Callback flows:
+  - User: `addcoins`/`subcoins` (fixed amounts + custom prompt), `setbalance_prompt`, `givecar_prompt` → car picker → `givecar`.
+  - Cars: `editcar`, `togglecar`, `setprice_prompt`, `settitle_prompt`, `addcar_prompt` (multi-step wizard: carId → title → price → isPurchasable toggle; `sortOrder` auto-assigned to `max+1`).
+  - Seasons: `editseason` (title, mapId, startsAt, endsAt, entryFee), `createseason_prompt` (multi-step: title → mapId → fee → prize share → starts → ends → confirm), `finishseason_confirm` → `finishseason_apply` (sets `endsAt = now`).
+- All outgoing messages use `parse_mode: "HTML"` with escaped user content.
+- Conversational input has a 5-minute TTL; state lives in-memory only, lost on process restart.
+
 `GET /v1/seasons`:
 - Lists seasons with `endsAt > requestNow`, sorted by `startsAt`.
 - Each item includes computed `status`, `entered`, `bestScore`, `totalRaces` for the JWT user.
@@ -437,6 +483,11 @@ bash fixtures/curls/10-full-flow.sh
 - Keep OpenAPI in `swagger.yaml` aligned with implemented routes.
 - Do not assume Mongo contains starter ownership unless code persisted it.
 - Tests are currently deleted. Do not create or run tests unless asked.
+- **Project code style is strict:**
+  - Do not place narrative/heading comments in the code. JSDoc on public methods is fine only when the surrounding module already uses JSDoc.
+  - Do not cast to `any` or `unknown`. Use proper types, generic constraints (`<T extends Document>` for Mongo aggregate), and type guards.
+  - Prefer repository-level invariant guards (e.g. `addRaceCoins`/`setRaceCoinsBalance` reject negatives) over UI-only validation.
+  - All admin-facing text uses `parse_mode: "HTML"` and **must** be HTML-escaped via `escapeHtml()` from `src/modules/admin/admin-input.ts`.
 
 ## Known Environment Notes
 

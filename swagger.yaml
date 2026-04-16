@@ -1,8 +1,17 @@
 openapi: 3.0.3
 info:
   title: Telegram Miniapp Cars API
-  version: 0.3.0
-  description: API for Telegram Mini App authentication, garage state, race coins purchase intents, car purchases, battle seasons with solo races and leaderboards, and Telegram payment webhooks.
+  version: 0.4.0
+  description: |
+    API for the Telegram Mini App backend:
+    - Telegram Mini App authentication and JWT issuance.
+    - Garage state and race coins balance.
+    - Race coins purchase intents via Telegram Stars invoice flow.
+    - Car purchases with race coins.
+    - Battle seasons with solo races and per-season leaderboards.
+    - Telegram payment webhooks (`pre_checkout_query`, `successful_payment`).
+    - Optional admin Telegram bot webhook guarded by a separate secret and a
+      Telegram ID whitelist (registered only when admin env vars are set).
 servers:
   - url: http://localhost:3000
     description: Local Docker Compose API
@@ -13,6 +22,7 @@ tags:
   - name: Purchases
   - name: Seasons
   - name: Telegram
+  - name: Admin
 paths:
   /health:
     get:
@@ -541,6 +551,44 @@ paths:
                 invalidSecret:
                   value:
                     code: INVALID_WEBHOOK_SECRET
+  /v1/admin/telegram/webhook:
+    post:
+      tags:
+        - Admin
+      summary: Receive Telegram admin bot webhook updates
+      description: |
+        Internal endpoint that receives webhook updates from the admin Telegram bot.
+        Route is registered only when `ADMIN_BOT_TOKEN`, `ADMIN_WEBHOOK_SECRET` and
+        `ADMIN_TELEGRAM_IDS` env vars are provided. Access inside the handler is
+        additionally gated by the `ADMIN_TELEGRAM_IDS` whitelist; unauthorized
+        update senders are silently ignored.
+      operationId: receiveAdminTelegramWebhook
+      security:
+        - adminWebhookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Update was accepted by the admin webhook handler.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          description: Admin webhook secret header is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidSecret:
+                  value:
+                    code: INVALID_WEBHOOK_SECRET
 components:
   securitySchemes:
     bearerAuth:
@@ -551,6 +599,12 @@ components:
       type: apiKey
       in: header
       name: x-telegram-bot-api-secret-token
+      description: Secret configured via `TELEGRAM_WEBHOOK_SECRET` for the main game bot webhook.
+    adminWebhookSecret:
+      type: apiKey
+      in: header
+      name: x-telegram-bot-api-secret-token
+      description: Secret configured via `ADMIN_WEBHOOK_SECRET` for the admin bot webhook.
   schemas:
     HealthResponse:
       type: object

@@ -37,6 +37,53 @@ export class MongoCarsCatalogRepository implements CarsCatalogRepository {
   async seedIfEmpty(cars: CatalogCar[]): Promise<void> {
     await seedCarsCatalogIfEmpty(this.collection, cars);
   }
+
+  async getAllCars(): Promise<CatalogCar[]> {
+    const docs = await this.collection.find({}).sort({ sortOrder: 1 }).toArray();
+    return docs.map(mapCarDocument);
+  }
+
+  async upsertCar(car: CatalogCar): Promise<CatalogCar> {
+    const now = new Date();
+    const doc = await this.collection.findOneAndUpdate(
+      { carId: car.carId },
+      {
+        $set: {
+          title: car.title,
+          sortOrder: car.sortOrder,
+          active: car.active,
+          isStarterDefault: car.isStarterDefault,
+          isPurchasable: car.isPurchasable,
+          price: car.price,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          createdAt: now,
+        },
+      },
+      { upsert: true, returnDocument: "after" }
+    );
+    if (!doc) throw new Error("Upsert car failed");
+    return mapCarDocument(doc);
+  }
+
+  async setCarActive(carId: string, active: boolean): Promise<CatalogCar | null> {
+    const doc = await this.collection.findOneAndUpdate(
+      { carId },
+      { $set: { active, updatedAt: new Date() } },
+      { returnDocument: "after" }
+    );
+    return doc ? mapCarDocument(doc) : null;
+  }
+
+  async getMaxSortOrder(): Promise<number> {
+    const doc = await this.collection
+      .find({})
+      .sort({ sortOrder: -1 })
+      .limit(1)
+      .next();
+    return doc?.sortOrder ?? 0;
+  }
 }
 
 export async function seedCarsCatalogIfEmpty(

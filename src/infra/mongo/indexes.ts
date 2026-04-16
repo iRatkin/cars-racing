@@ -26,6 +26,20 @@ export const usersIndexes = [
       name: "users_telegramUserId_unique",
       unique: true
     }
+  },
+  {
+    keys: { username: 1 },
+    options: {
+      name: "users_username",
+      partialFilterExpression: { username: { $type: "string" } }
+    }
+  },
+  {
+    keys: { utmSource: 1 },
+    options: {
+      name: "users_utmSource",
+      partialFilterExpression: { utmSource: { $type: "string" } }
+    }
   }
 ] as const satisfies readonly CollectionIndexDefinition[];
 

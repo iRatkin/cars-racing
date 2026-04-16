@@ -16,6 +16,10 @@ export interface CatalogCar {
 export interface CarsCatalogRepository {
   getActiveSortedByOrder(): Promise<CatalogCar[]>;
   getById(carId: string): Promise<CatalogCar | null>;
+  getAllCars(): Promise<CatalogCar[]>;
+  upsertCar(car: CatalogCar): Promise<CatalogCar>;
+  setCarActive(carId: string, active: boolean): Promise<CatalogCar | null>;
+  getMaxSortOrder(): Promise<number>;
 }
 
 export function canPurchaseCarServerSide(car: CatalogCar | null | undefined): boolean {

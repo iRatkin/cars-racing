@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { WithId } from "mongodb";
+import type { Document, WithId } from "mongodb";
 
 import type {
   CreatePurchaseIntentInput,
   PurchaseIntentRecord,
+  PurchaseStatsSummary,
   PurchasesRepository
 } from "../../modules/payments/purchases-repository.js";
 import type { PurchaseStatus } from "../../modules/payments/purchase-domain.js";
@@ -31,12 +32,20 @@ export interface MongoPurchasesRepositoryOptions {
   createPurchaseId?: () => string;
 }
 
+export interface PurchaseStatsAggregateRow {
+  _id: null;
+  coinsGrantedTotal: number;
+  starsRevenueTotal: number;
+}
+
 export interface PurchasesCollection {
   findOne(
     filter: Record<string, unknown>
   ): Promise<WithId<MongoPurchaseDocument> | MongoPurchaseDocument | null>;
   insertOne(document: MongoPurchaseDocument): Promise<unknown>;
   updateOne(filter: { purchaseId: string }, update: Record<string, unknown>): Promise<unknown>;
+  countDocuments(filter: Record<string, unknown>): Promise<number>;
+  aggregate<T extends Document>(pipeline: Document[]): { toArray(): Promise<T[]> };
 }
 
 export class MongoPurchasesRepository implements PurchasesRepository {
@@ -141,6 +150,37 @@ export class MongoPurchasesRepository implements PurchasesRepository {
         }
       }
     );
+  }
+
+  async getStatsSummary(referenceNow: Date): Promise<PurchaseStatsSummary> {
+    const since24h = new Date(referenceNow.getTime() - 24 * 60 * 60 * 1000);
+    const [activeIntents, grantedTotal, grantedLast24h, grantedAggregate] = await Promise.all([
+      this.collection.countDocuments({ isActiveIntent: true }),
+      this.collection.countDocuments({ status: "granted" }),
+      this.collection.countDocuments({ status: "granted", updatedAt: { $gte: since24h } }),
+      this.collection
+        .aggregate<PurchaseStatsAggregateRow>([
+          { $match: { status: "granted" } },
+          {
+            $group: {
+              _id: null,
+              coinsGrantedTotal: { $sum: "$coinsAmount" },
+              starsRevenueTotal: { $sum: "$priceSnapshot.amount" }
+            }
+          }
+        ])
+        .toArray()
+    ]);
+
+    const agg = grantedAggregate[0];
+
+    return {
+      activeIntents,
+      grantedTotal,
+      grantedLast24h,
+      coinsGrantedTotal: agg?.coinsGrantedTotal ?? 0,
+      starsRevenueTotal: agg?.starsRevenueTotal ?? 0
+    };
   }
 }
 

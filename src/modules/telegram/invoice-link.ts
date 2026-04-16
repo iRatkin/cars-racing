@@ -151,6 +151,7 @@ export interface TelegramInlineKeyboardButton {
   text: string;
   web_app?: { url: string };
   url?: string;
+  callback_data?: string;
 }
 
 export async function sendTelegramMessage(
@@ -160,7 +161,8 @@ export async function sendTelegramMessage(
   const fetchImpl = options.fetchImpl ?? defaultTelegramFetch;
   const body: Record<string, unknown> = {
     chat_id: input.chatId,
-    text: input.text
+    text: input.text,
+    parse_mode: "HTML",
   };
   if (input.replyMarkup) {
     body.reply_markup = input.replyMarkup;
@@ -187,6 +189,93 @@ export async function sendTelegramMessage(
   if (!response.ok || !responseBody.ok) {
     throw new Error(
       `Telegram sendMessage failed: ${responseBody.description ?? `HTTP ${response.status}`}`
+    );
+  }
+}
+
+export async function answerCallbackQuery(
+  options: TelegramInvoiceLinkClientOptions,
+  callbackQueryId: string,
+  text?: string
+): Promise<void> {
+  const fetchImpl = options.fetchImpl ?? defaultTelegramFetch;
+  const body: Record<string, unknown> = {
+    callback_query_id: callbackQueryId,
+    text
+  };
+
+  const response = await fetchImpl(
+    `https://api.telegram.org/bot${options.botToken}/answerCallbackQuery`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+
+  let responseBody: TelegramApiResponse;
+  try {
+    responseBody = await response.json() as TelegramApiResponse;
+  } catch {
+    throw new Error(
+      `Telegram answerCallbackQuery failed: HTTP ${response.status} (non-JSON response)`
+    );
+  }
+
+  if (!response.ok || !responseBody.ok) {
+    throw new Error(
+      `Telegram answerCallbackQuery failed: ${
+        responseBody.description ?? `HTTP ${response.status}`
+      }`
+    );
+  }
+}
+
+export interface TelegramEditMessageTextInput {
+  chatId: number | string;
+  messageId: number;
+  text: string;
+  replyMarkup?: TelegramInlineKeyboardMarkup;
+}
+
+export async function editMessageText(
+  options: TelegramInvoiceLinkClientOptions,
+  input: TelegramEditMessageTextInput
+): Promise<void> {
+  const fetchImpl = options.fetchImpl ?? defaultTelegramFetch;
+  const body: Record<string, unknown> = {
+    chat_id: input.chatId,
+    message_id: input.messageId,
+    text: input.text,
+    parse_mode: "HTML"
+  };
+  if (input.replyMarkup) {
+    body.reply_markup = input.replyMarkup;
+  }
+
+  const response = await fetchImpl(
+    `https://api.telegram.org/bot${options.botToken}/editMessageText`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+
+  let responseBody: TelegramApiResponse;
+  try {
+    responseBody = await response.json() as TelegramApiResponse;
+  } catch {
+    throw new Error(
+      `Telegram editMessageText failed: HTTP ${response.status} (non-JSON response)`
+    );
+  }
+
+  if (!response.ok || !responseBody.ok) {
+    throw new Error(
+      `Telegram editMessageText failed: ${
+        responseBody.description ?? `HTTP ${response.status}`
+      }`
     );
   }
 }

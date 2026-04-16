@@ -31,6 +31,7 @@ import {
   type TelegramFetch
 } from "./modules/telegram/invoice-link.js";
 import { createWebhookHandler } from "./modules/telegram/webhook-handler.js";
+import { createAdminBotHandler } from "./modules/admin/admin-bot-handler.js";
 
 export interface MongoCollectionFactory {
   collection<TSchema extends Document = Document>(name: string): Collection<TSchema>;
@@ -76,6 +77,21 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
     miniAppUrl: input.config.miniAppUrl
   });
 
+  let adminBotHandler: AppDependencies["adminHandleTelegramWebhook"] | undefined;
+  if (input.config.adminConfig) {
+    adminBotHandler = createAdminBotHandler({
+      usersRepository,
+      carsCatalogRepository,
+      seasonsRepository,
+      purchasesRepository,
+      telegramOptions: {
+        botToken: input.config.adminConfig.adminBotToken,
+        fetchImpl: input.fetchImpl
+      },
+      allowedTelegramIds: input.config.adminConfig.adminTelegramIds
+    });
+  }
+
   return buildApp({
     config: input.config,
     usersRepository,
@@ -87,6 +103,7 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
     mongoClient: input.mongoClient,
     createInvoiceLink: (invoiceInput) =>
       createTelegramInvoiceLink(telegramOptions, invoiceInput),
-    handleTelegramWebhook: input.handleTelegramWebhook ?? webhookHandler
+    handleTelegramWebhook: input.handleTelegramWebhook ?? webhookHandler,
+    adminHandleTelegramWebhook: adminBotHandler,
   });
 }

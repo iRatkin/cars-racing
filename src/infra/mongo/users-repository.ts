@@ -1,10 +1,11 @@
-import type { WithId } from "mongodb";
+import type { Document, WithId } from "mongodb";
 
 import type {
   AppUser,
   UpsertTelegramUserInput,
   UserUtmData,
-  UsersRepository
+  UsersRepository,
+  UtmSourceCount
 } from "../../modules/users/users-repository.js";
 
 export interface MongoUserDocument {
@@ -29,8 +30,13 @@ export interface MongoUserDocument {
   updatedAt?: Date;
 }
 
+export interface UtmAggregateRow {
+  utmSource: string;
+  count: number;
+}
+
 export interface UsersCollection {
-  findOne(filter: { userId: string }): Promise<WithId<MongoUserDocument> | MongoUserDocument | null>;
+  findOne(filter: Record<string, unknown>): Promise<WithId<MongoUserDocument> | MongoUserDocument | null>;
   findOneAndUpdate(
     filter: Record<string, unknown>,
     update: Record<string, unknown>,
@@ -44,6 +50,8 @@ export interface UsersCollection {
     filter: Record<string, unknown>,
     update: Record<string, unknown>
   ): Promise<unknown>;
+  countDocuments(filter: Record<string, unknown>): Promise<number>;
+  aggregate<T extends Document>(pipeline: Document[]): { toArray(): Promise<T[]> };
 }
 
 export class MongoUsersRepository implements UsersRepository {
@@ -93,6 +101,9 @@ export class MongoUsersRepository implements UsersRepository {
   }
 
   async addRaceCoins(userId: string, amount: number): Promise<AppUser> {
+    if (!Number.isInteger(amount) || amount < 0) {
+      throw new Error("addRaceCoins expects a non-negative integer amount");
+    }
     const document = await this.collection.findOneAndUpdate(
       { userId },
       { $inc: { raceCoinsBalance: amount }, $set: { updatedAt: new Date() } },
@@ -138,6 +149,57 @@ export class MongoUsersRepository implements UsersRepository {
       { telegramUserId, utmSource: { $exists: false } },
       { $set: setFields }
     );
+  }
+
+  async getUserByTelegramId(telegramUserId: string): Promise<AppUser | null> {
+    const document = await this.collection.findOne({ telegramUserId });
+    return document ? mapUserDocument(document) : null;
+  }
+
+  async getUserByUsername(username: string): Promise<AppUser | null> {
+    const document = await this.collection.findOne({ username });
+    return document ? mapUserDocument(document) : null;
+  }
+
+  async setRaceCoinsBalance(userId: string, amount: number): Promise<AppUser> {
+    if (!Number.isInteger(amount) || amount < 0) {
+      throw new Error("setRaceCoinsBalance expects a non-negative integer amount");
+    }
+    const document = await this.collection.findOneAndUpdate(
+      { userId },
+      { $set: { raceCoinsBalance: amount, updatedAt: new Date() } },
+      { includeResultMetadata: false, returnDocument: "after" }
+    );
+    if (!document) throw new Error("User not found for setRaceCoinsBalance");
+    return mapUserDocument(document);
+  }
+
+  async getUserCount(): Promise<number> {
+    return this.collection.countDocuments({});
+  }
+
+  async getTopUtmSources(limit: number): Promise<UtmSourceCount[]> {
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
+    const rows = await this.collection
+      .aggregate<UtmAggregateRow>([
+        {
+          $group: {
+            _id: { $ifNull: ["$utmSource", "direct"] },
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            utmSource: "$_id",
+            count: 1
+          }
+        },
+        { $sort: { count: -1 } },
+        { $limit: safeLimit }
+      ])
+      .toArray();
+    return rows.map((row) => ({ utmSource: row.utmSource, count: row.count }));
   }
 }
 
