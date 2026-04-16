@@ -1,3 +1,11 @@
+export interface UserUtmData {
+  utmSource: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+}
+
 export interface AppUser {
   userId: string;
   telegramUserId: string;
@@ -11,6 +19,7 @@ export interface AppUser {
   selectedCarId?: string | null;
   garageRevision: number;
   raceCoinsBalance: number;
+  utm?: UserUtmData;
 }
 
 export interface UpsertTelegramUserInput {
@@ -29,4 +38,5 @@ export interface UsersRepository {
   addRaceCoins(userId: string, amount: number): Promise<AppUser>;
   spendRaceCoins(userId: string, amount: number): Promise<AppUser | null>;
   addOwnedCar(userId: string, carId: string): Promise<AppUser | null>;
+  setUtmIfNotSet(telegramUserId: string, utm: UserUtmData): Promise<void>;
 }

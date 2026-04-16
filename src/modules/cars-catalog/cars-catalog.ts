@@ -1,21 +1,6 @@
-export type Phase0CarId = "car0" | "car1" | "car2" | "car3" | "car4" | "car5";
+import type { CatalogCar } from "./cars-catalog-repository.js";
 
-export type Phase0CarPrice = {
-  currency: "RC";
-  amount: number;
-};
-
-export type Phase0Car = {
-  carId: Phase0CarId;
-  title: string;
-  sortOrder: number;
-  active: boolean;
-  isStarterDefault: boolean;
-  isPurchasable: boolean;
-  price: Phase0CarPrice;
-};
-
-export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
+export const PHASE_0_CAR_CATALOG: readonly CatalogCar[] = [
   {
     carId: "car0",
     title: "car0",
@@ -23,10 +8,7 @@ export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
     active: true,
     isStarterDefault: true,
     isPurchasable: false,
-    price: {
-      currency: "RC",
-      amount: 0
-    }
+    price: { currency: "RC", amount: 0 }
   },
   {
     carId: "car1",
@@ -35,10 +17,7 @@ export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
     active: true,
     isStarterDefault: false,
     isPurchasable: true,
-    price: {
-      currency: "RC",
-      amount: 1
-    }
+    price: { currency: "RC", amount: 1 }
   },
   {
     carId: "car2",
@@ -47,10 +26,7 @@ export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
     active: true,
     isStarterDefault: false,
     isPurchasable: true,
-    price: {
-      currency: "RC",
-      amount: 50
-    }
+    price: { currency: "RC", amount: 50 }
   },
   {
     carId: "car3",
@@ -59,10 +35,7 @@ export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
     active: true,
     isStarterDefault: false,
     isPurchasable: true,
-    price: {
-      currency: "RC",
-      amount: 100
-    }
+    price: { currency: "RC", amount: 100 }
   },
   {
     carId: "car4",
@@ -71,10 +44,7 @@ export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
     active: true,
     isStarterDefault: false,
     isPurchasable: true,
-    price: {
-      currency: "RC",
-      amount: 250
-    }
+    price: { currency: "RC", amount: 250 }
   },
   {
     carId: "car5",
@@ -83,23 +53,6 @@ export const PHASE_0_CAR_CATALOG: readonly Phase0Car[] = [
     active: true,
     isStarterDefault: false,
     isPurchasable: true,
-    price: {
-      currency: "RC",
-      amount: 500
-    }
+    price: { currency: "RC", amount: 500 }
   }
 ] as const;
-
-export function getActiveCarsSortedBySortOrder(): Phase0Car[] {
-  return [...PHASE_0_CAR_CATALOG]
-    .filter((car) => car.active)
-    .sort((left, right) => left.sortOrder - right.sortOrder);
-}
-
-export function getCarById(carId: string): Phase0Car | null {
-  return PHASE_0_CAR_CATALOG.find((car) => car.carId === carId) ?? null;
-}
-
-export function canPurchaseCarServerSide(car: Phase0Car | null | undefined): boolean {
-  return Boolean(car && car.active && car.isPurchasable && !car.isStarterDefault);
-}

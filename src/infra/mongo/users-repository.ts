@@ -3,6 +3,7 @@ import type { WithId } from "mongodb";
 import type {
   AppUser,
   UpsertTelegramUserInput,
+  UserUtmData,
   UsersRepository
 } from "../../modules/users/users-repository.js";
 
@@ -19,6 +20,11 @@ export interface MongoUserDocument {
   selectedCarId?: string | null;
   garageRevision: number;
   raceCoinsBalance: number;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -34,6 +40,10 @@ export interface UsersCollection {
       upsert?: boolean;
     }
   ): Promise<WithId<MongoUserDocument> | MongoUserDocument | null>;
+  updateOne(
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>
+  ): Promise<unknown>;
 }
 
 export class MongoUsersRepository implements UsersRepository {
@@ -113,6 +123,22 @@ export class MongoUsersRepository implements UsersRepository {
     );
     return document ? mapUserDocument(document) : null;
   }
+
+  async setUtmIfNotSet(telegramUserId: string, utm: UserUtmData): Promise<void> {
+    const setFields: Record<string, string> = {
+      utmSource: utm.utmSource,
+      updatedAt: new Date().toISOString()
+    };
+    if (utm.utmMedium !== undefined) setFields.utmMedium = utm.utmMedium;
+    if (utm.utmCampaign !== undefined) setFields.utmCampaign = utm.utmCampaign;
+    if (utm.utmContent !== undefined) setFields.utmContent = utm.utmContent;
+    if (utm.utmTerm !== undefined) setFields.utmTerm = utm.utmTerm;
+
+    await this.collection.updateOne(
+      { telegramUserId, utmSource: { $exists: false } },
+      { $set: setFields }
+    );
+  }
 }
 
 export function buildUserId(telegramUserId: string): string {
@@ -132,6 +158,15 @@ export function mapUserDocument(document: WithId<MongoUserDocument> | MongoUserD
     ownedCarIds: [...(document.ownedCarIds ?? [])],
     selectedCarId: document.selectedCarId,
     garageRevision: document.garageRevision,
-    raceCoinsBalance: document.raceCoinsBalance ?? 0
+    raceCoinsBalance: document.raceCoinsBalance ?? 0,
+    utm: document.utmSource
+      ? {
+          utmSource: document.utmSource,
+          utmMedium: document.utmMedium,
+          utmCampaign: document.utmCampaign,
+          utmContent: document.utmContent,
+          utmTerm: document.utmTerm
+        }
+      : undefined
   };
 }

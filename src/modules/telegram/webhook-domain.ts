@@ -130,6 +130,13 @@ export function isTelegramSuccessfulPaymentWebhookUpdate(
   );
 }
 
+export function extractStartCommandPayload(text: string): string | undefined {
+  const spaceIndex = text.indexOf(" ");
+  if (spaceIndex === -1) return undefined;
+  const payload = text.slice(spaceIndex + 1).trim();
+  return payload.length > 0 ? payload : undefined;
+}
+
 export function isTelegramBotCommandUpdate(
   value: unknown,
   command: string

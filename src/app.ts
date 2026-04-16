@@ -13,9 +13,8 @@ import {
 } from "./modules/auth/telegram-init-data.js";
 import {
   canPurchaseCarServerSide,
-  getActiveCarsSortedBySortOrder,
-  getCarById
-} from "./modules/cars-catalog/cars-catalog.js";
+  type CarsCatalogRepository
+} from "./modules/cars-catalog/cars-catalog-repository.js";
 import { buildGarageView } from "./modules/garage/garage-view.js";
 import { classifyPurchaseIntentRetry } from "./modules/payments/purchase-domain.js";
 import type { PurchaseIntentRecord, PurchasesRepository } from "./modules/payments/purchases-repository.js";
@@ -36,6 +35,7 @@ export interface AppDependencies {
   config?: AppConfig;
   usersRepository?: UsersRepository;
   purchasesRepository?: PurchasesRepository;
+  carsCatalogRepository?: CarsCatalogRepository;
   seasonsRepository?: SeasonsRepository;
   seasonEntriesRepository?: SeasonEntriesRepository;
   raceRunsRepository?: RaceRunsRepository;
@@ -78,6 +78,7 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
     config,
     usersRepository,
     purchasesRepository,
+    carsCatalogRepository,
     seasonsRepository,
     seasonEntriesRepository,
     raceRunsRepository,
@@ -123,9 +124,10 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
     });
   }
 
-  if (config && usersRepository) {
+  if (config && usersRepository && carsCatalogRepository) {
     const appConfig = config;
     const userRepo = usersRepository;
+    const carsRepo = carsCatalogRepository;
 
     app.get("/v1/garage", async (request, reply) => {
       let tokenPayload: { sub: string; telegramUserId: string };
@@ -145,12 +147,13 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
       }
 
       const starterState = ensureStarterCarState(user);
+      const activeCars = await carsRepo.getActiveSortedByOrder();
       const garage = buildGarageView(
         {
           ownedCarIds: starterState.ownedCarIds,
           garageRevision: starterState.garageRevision
         },
-        getActiveCarsSortedBySortOrder().map((car) => ({
+        activeCars.map((car) => ({
           carId: car.carId,
           title: car.title,
           price: car.price,
@@ -360,7 +363,7 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
       }
 
       const starterState = ensureStarterCarState(user);
-      const car = getCarById(parsedBody.data.carId);
+      const car = await carsRepo.getById(parsedBody.data.carId);
       if (!car) {
         return reply.code(404).send({ code: "CAR_NOT_FOUND" });
       }

@@ -3,6 +3,10 @@ import type { Collection, Document, MongoClient } from "mongodb";
 import { buildApp, type AppDependencies } from "./app.js";
 import type { AppConfig } from "./config/config.js";
 import {
+  MongoCarsCatalogRepository,
+  type MongoCarDocument
+} from "./infra/mongo/cars-catalog-repository.js";
+import {
   MongoPurchasesRepository,
   type MongoPurchaseDocument
 } from "./infra/mongo/purchases-repository.js";
@@ -44,6 +48,9 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
   const usersRepository = new MongoUsersRepository(
     input.db.collection<MongoUserDocument>("users")
   );
+  const carsCatalogRepository = new MongoCarsCatalogRepository(
+    input.db.collection<MongoCarDocument>("carsCatalog")
+  );
   const purchasesRepository = new MongoPurchasesRepository(
     input.db.collection<MongoPurchaseDocument>("purchases")
   );
@@ -73,6 +80,7 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
     config: input.config,
     usersRepository,
     purchasesRepository,
+    carsCatalogRepository,
     seasonsRepository,
     seasonEntriesRepository,
     raceRunsRepository,

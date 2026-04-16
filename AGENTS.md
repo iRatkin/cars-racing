@@ -18,6 +18,7 @@ Target behavior:
 - API asks Telegram Bot API for an invoice link when purchasing race coins bundles.
 - Telegram POSTs payment webhook updates (`pre_checkout_query`, `successful_payment`) to the backend.
 - Webhook handler approves pre-checkout, grants race coins on successful payment.
+- Bot registers users and captures UTM attribution on `/start` command.
 - MongoDB is the persistence layer.
 
 ## Current Reality
@@ -36,6 +37,12 @@ Payment webhook processing is fully implemented:
 - `pre_checkout_query` → validates purchase, calls `answerPreCheckoutQuery(ok=true)`, updates status to `pre_checkout_approved`.
 - `successful_payment` → finds purchase by `invoicePayload`, grants race coins via `addRaceCoins`, marks purchase as `granted`.
 - Idempotent: already-granted purchases are skipped.
+
+Game bot `/start` handling:
+- On `/start`, bot upserts user by Telegram profile fields from `message.from` (registers before Mini App loads).
+- If `/start <payload>` contains a base64url-encoded UTM payload, it is parsed and saved via `setUtmIfNotSet` (first-touch attribution, never overwritten).
+- Bot replies with a welcome message; if `MINI_APP_URL` is set, includes an inline `web_app` button to open the Mini App.
+- UTM payload format: base64url of `{"s":"<source>","m":"<medium>","c":"<campaign>","cn":"<content>","t":"<term>"}` (all keys except `s` are optional).
 
 Battle seasons:
 - Season documents live in Mongo (`seasons`); `status` is always derived from `startsAt` / `endsAt` and a single request clock (`requestNow`), not stored.
@@ -122,6 +129,7 @@ Required:
 - `TELEGRAM_WEBHOOK_SECRET`
 
 Optional:
+- `MINI_APP_URL`: URL of the Mini App shown as `web_app` button on `/start`; if absent, bot sends plain text welcome.
 - `NODE_ENV`: `dev`, `stage`, `prod` (also accepts `development`, `staging`, `production`); default `dev`
 - `PORT`: integer; default `3000`
 
@@ -167,12 +175,13 @@ Common error codes are documented in `swagger.yaml`.
 
 Core API:
 - `src/app.ts`: declares Fastify routes and response behavior.
-- `src/runtime.ts`: creates Mongo repositories (users, purchases, seasons, season entries, race runs), Telegram invoice client, webhook handler, passes `MongoClient` for season transactions, then calls `buildApp()`.
-- `src/server.ts`: loads env, connects Mongo, creates indexes, listens on `0.0.0.0`.
+- `src/runtime.ts`: creates Mongo repositories (users, cars catalog, purchases, seasons, season entries, race runs), Telegram invoice client, webhook handler, passes `MongoClient` for season transactions, then calls `buildApp()`.
+- `src/server.ts`: loads env, connects Mongo, creates indexes, seeds `carsCatalog` if empty, listens on `0.0.0.0`.
 - `src/config/config.ts`: env parsing and validation (accepts NODE_ENV aliases).
 
 Mongo:
 - `src/infra/mongo/users-repository.ts`: Mongo implementation of `UsersRepository`.
+- `src/infra/mongo/cars-catalog-repository.ts`: Mongo implementation of `CarsCatalogRepository`; also exports `seedCarsCatalogIfEmpty`.
 - `src/infra/mongo/purchases-repository.ts`: Mongo implementation of `PurchasesRepository`.
 - `src/infra/mongo/seasons-repository.ts`: Mongo `SeasonsRepository`.
 - `src/infra/mongo/season-entries-repository.ts`: Mongo `SeasonEntriesRepository`.
@@ -183,14 +192,15 @@ Mongo:
 Domain:
 - `src/modules/auth/telegram-init-data.ts`: Telegram Mini App initData validation.
 - `src/modules/users/starter-car.ts`: derived starter car state.
-- `src/modules/cars-catalog/cars-catalog.ts`: hardcoded Phase 0 car catalog with prices in race coins (RC).
+- `src/modules/cars-catalog/cars-catalog.ts`: `PHASE_0_CAR_CATALOG` seed data array (source of truth for initial Mongo seed only).
+- `src/modules/cars-catalog/cars-catalog-repository.ts`: `CatalogCar` type, `CarsCatalogRepository` interface, `canPurchaseCarServerSide`.
 - `src/modules/race-coins/race-coins-catalog.ts`: race coins bundles available for purchase with Telegram Stars.
 - `src/modules/garage/garage-view.ts`: garage projection.
 - `src/modules/payments/purchase-domain.ts`: purchase retry/grant decisions.
 - `src/modules/payments/purchases-repository.ts`: purchase repository interface.
-- `src/modules/telegram/invoice-link.ts`: invoice request body builder, Telegram HTTP client, `answerPreCheckoutQuery`.
-- `src/modules/telegram/webhook-domain.ts`: webhook update type guards and validators.
-- `src/modules/telegram/webhook-handler.ts`: real webhook handler (pre_checkout_query + successful_payment).
+- `src/modules/telegram/invoice-link.ts`: invoice request body builder, Telegram HTTP client, `answerPreCheckoutQuery`, `sendTelegramMessage`.
+- `src/modules/telegram/webhook-domain.ts`: webhook update type guards, validators, `isTelegramBotCommandUpdate`, `extractStartCommandPayload`.
+- `src/modules/telegram/webhook-handler.ts`: real webhook handler (`/start` registration + UTM, `pre_checkout_query`, `successful_payment`); accepts optional `miniAppUrl`.
 - `src/modules/seasons/seasons-domain.ts`: season types, leaderboard view types, `computeSeasonStatus`, `canEnterSeason`, `canStartRace`.
 - `src/modules/seasons/seasons-repository.ts`, `season-entries-repository.ts`, `race-runs-repository.ts`: repository interfaces.
 - `src/modules/seasons/season-atomic.ts`: result types for transactional season flows.
@@ -218,13 +228,13 @@ Docs/spec artifacts:
 
 Collections used now:
 - `users`
+- `carsCatalog`
 - `purchases`
 - `seasons`
 - `seasonEntries`
 - `raceRuns`
 
 Index definitions also include future/related collections:
-- `carsCatalog`
 - `paymentEvents`
 
 User document shape, see `MongoUserDocument`:
@@ -235,6 +245,7 @@ User document shape, see `MongoUserDocument`:
 - `selectedCarId`
 - `garageRevision`
 - `raceCoinsBalance`
+- optional UTM fields: `utmSource`, `utmMedium`, `utmCampaign`, `utmContent`, `utmTerm` (set once via `setUtmIfNotSet`, never overwritten)
 - timestamps
 
 Purchase document shape, see `MongoPurchaseDocument`:
@@ -265,6 +276,9 @@ Season entry document shape, see `MongoSeasonEntryDocument`:
 Race run document shape, see `MongoRaceRunDocument`:
 - `raceId`, `seasonId`, `userId`, `seed`, `score`, `status`, `startedAt`, optional `finishedAt`
 
+Car catalog document shape, see `MongoCarDocument`:
+- `carId`, `title`, `sortOrder`, `active`, `isStarterDefault`, `isPurchasable`, `price` (`{ currency: "RC", amount: number }`), timestamps
+
 ## Route Behavior Notes
 
 `POST /v1/auth/telegram`:
@@ -278,7 +292,8 @@ Race run document shape, see `MongoRaceRunDocument`:
 `GET /v1/garage`:
 - Verifies JWT.
 - Loads user by `sub`.
-- Returns active catalog cars with `owned` and `canBuy`, plus `raceCoinsBalance`.
+- Fetches active cars from `carsCatalog` collection sorted by `sortOrder`.
+- Returns catalog cars with `owned` and `canBuy`, plus `raceCoinsBalance`.
 - Uses derived starter state.
 - Dev mode logs full garage response.
 
@@ -305,6 +320,7 @@ Race run document shape, see `MongoRaceRunDocument`:
 `POST /v1/telegram/webhook`:
 - Verifies secret header.
 - Passes raw body to webhook handler.
+- `/start` command: upserts user from `message.from`; if payload present, parses base64url UTM and calls `setUtmIfNotSet`; replies with welcome message + optional `web_app` button.
 - `pre_checkout_query`: finds purchase by invoicePayload, validates amount/currency, calls `answerPreCheckoutQuery(ok=true)`, sets status to `pre_checkout_approved`.
 - `successful_payment`: finds purchase by invoicePayload, grants race coins to user, marks purchase as `granted`.
 - Unsupported update types are silently ignored.
@@ -331,9 +347,11 @@ Race run document shape, see `MongoRaceRunDocument`:
 
 ## Catalog Snapshot
 
-Defined in `src/modules/cars-catalog/cars-catalog.ts`.
+Car catalog is stored in MongoDB (`carsCatalog` collection) and managed at runtime.
+On first server startup, if the collection is empty, it is seeded from `PHASE_0_CAR_CATALOG` in `src/modules/cars-catalog/cars-catalog.ts`.
+Subsequent starts skip seeding — changes made via admin are preserved.
 
-Cars (prices in race coins):
+Initial seed (prices in race coins):
 - `car0`: active, starter default, not purchasable, price `0 RC`.
 - `car1`: active, purchasable, price `1 RC`.
 - `car2`: active, purchasable, price `50 RC`.

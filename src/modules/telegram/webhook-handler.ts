@@ -2,7 +2,9 @@ import type { PurchasesRepository } from "../payments/purchases-repository.js";
 import type { UsersRepository } from "../users/users-repository.js";
 import type { TelegramInvoiceLinkClientOptions } from "./invoice-link.js";
 import { answerPreCheckoutQuery, sendTelegramMessage } from "./invoice-link.js";
+import type { UserUtmData } from "../users/users-repository.js";
 import {
+  extractStartCommandPayload,
   isTelegramBotCommandUpdate,
   isTelegramPreCheckoutWebhookUpdate,
   isTelegramSuccessfulPaymentWebhookUpdate,
@@ -50,6 +52,26 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
 
   async function handleStartCommand(update: TelegramBotCommandUpdate): Promise<void> {
     const chatId = update.message.chat.id;
+    const from = update.message.from;
+    const telegramUserId = String(from.id);
+
+    await usersRepository.upsertTelegramUser({
+      telegramUserId,
+      firstName: typeof from.first_name === "string" ? from.first_name : undefined,
+      lastName: typeof from.last_name === "string" ? from.last_name : undefined,
+      username: typeof from.username === "string" ? from.username : undefined,
+      languageCode: typeof from.language_code === "string" ? from.language_code : undefined,
+      isPremium: typeof from.is_premium === "boolean" ? from.is_premium : undefined
+    });
+
+    const rawPayload = extractStartCommandPayload(update.message.text);
+    if (rawPayload) {
+      const utm = parseUtmPayload(rawPayload);
+      if (utm) {
+        await usersRepository.setUtmIfNotSet(telegramUserId, utm);
+        logger?.info({ telegramUserId, utm }, "/start: UTM saved");
+      }
+    }
 
     if (miniAppUrl) {
       await sendTelegramMessage(telegramOptions, {
@@ -68,7 +90,7 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
       });
     }
 
-    logger?.info({ chatId }, "/start command handled");
+    logger?.info({ chatId, telegramUserId }, "/start command handled");
   }
 
   async function handlePreCheckoutQuery(update: TelegramPreCheckoutWebhookUpdate): Promise<void> {
@@ -140,5 +162,24 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
       telegramUserId,
       coinsAmount: purchase.coinsAmount
     }, "successful_payment: coins granted");
+  }
+}
+
+function parseUtmPayload(payload: string): UserUtmData | undefined {
+  try {
+    const json = Buffer.from(payload, "base64url").toString("utf8");
+    const data: unknown = JSON.parse(json);
+    if (typeof data !== "object" || data === null) return undefined;
+    const d = data as Record<string, unknown>;
+    if (typeof d.s !== "string") return undefined;
+    return {
+      utmSource: d.s,
+      utmMedium: typeof d.m === "string" ? d.m : undefined,
+      utmCampaign: typeof d.c === "string" ? d.c : undefined,
+      utmContent: typeof d.cn === "string" ? d.cn : undefined,
+      utmTerm: typeof d.t === "string" ? d.t : undefined
+    };
+  } catch {
+    return undefined;
   }
 }

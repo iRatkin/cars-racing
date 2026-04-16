@@ -31,6 +31,13 @@ export const usersIndexes = [
 
 export const carsCatalogIndexes = [
   {
+    keys: { carId: 1 },
+    options: {
+      name: "carsCatalog_carId_unique",
+      unique: true
+    }
+  },
+  {
     keys: { active: 1, sortOrder: 1 },
     options: {
       name: "carsCatalog_active_sortOrder"

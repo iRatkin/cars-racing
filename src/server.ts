@@ -2,7 +2,12 @@ import "dotenv/config";
 import { MongoClient } from "mongodb";
 
 import { loadConfigFromEnv } from "./config/config.js";
+import {
+  seedCarsCatalogIfEmpty,
+  type MongoCarDocument
+} from "./infra/mongo/cars-catalog-repository.js";
 import { ensureMongoIndexes } from "./infra/mongo/indexes.js";
+import { PHASE_0_CAR_CATALOG } from "./modules/cars-catalog/cars-catalog.js";
 import { buildMongoBackedApp } from "./runtime.js";
 
 async function main(): Promise<void> {
@@ -12,6 +17,10 @@ async function main(): Promise<void> {
   await mongoClient.connect();
   const db = mongoClient.db();
   await ensureMongoIndexes(db);
+  await seedCarsCatalogIfEmpty(
+    db.collection<MongoCarDocument>("carsCatalog"),
+    [...PHASE_0_CAR_CATALOG]
+  );
 
   const app = buildMongoBackedApp({
     config,
