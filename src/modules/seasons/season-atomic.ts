@@ -9,3 +9,7 @@ export type EnterSeasonAtomicResult =
 export type FinishSeasonRaceAtomicResult =
   | { kind: "already-finished" }
   | { kind: "success"; raceRun: RaceRun; isNewBest: boolean; bestScore: number };
+
+export type FinishTrainingRaceAtomicResult =
+  | { kind: "already-finished" }
+  | { kind: "success"; raceRun: RaceRun; isNewBest: boolean; bestScore: number };

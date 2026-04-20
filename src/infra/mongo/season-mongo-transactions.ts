@@ -3,12 +3,19 @@ import { randomUUID } from "node:crypto";
 
 import type {
   EnterSeasonAtomicResult,
-  FinishSeasonRaceAtomicResult
+  FinishSeasonRaceAtomicResult,
+  FinishTrainingRaceAtomicResult
 } from "../../modules/seasons/season-atomic.js";
 import type { Season, SeasonEntry } from "../../modules/seasons/seasons-domain.js";
+import {
+  mapRaceRunDocument,
+  type MongoRaceRunDocument
+} from "./race-runs-repository.js";
 import { mapSeasonEntryDocument, type MongoSeasonEntryDocument } from "./season-entries-repository.js";
+import {
+  type MongoSeasonTrainingEntryDocument
+} from "./season-training-entries-repository.js";
 import { mapUserDocument, type MongoUserDocument } from "./users-repository.js";
-import type { MongoRaceRunDocument } from "./race-runs-repository.js";
 
 function isDuplicateKeyError(error: unknown): boolean {
   return (
@@ -143,18 +150,82 @@ export async function finishSeasonRaceAtomicallyInMongo(
 
     return {
       kind: "success",
-      raceRun: {
-        raceId: raceAfter.raceId,
-        seasonId: raceAfter.seasonId,
-        userId: raceAfter.userId,
-        seed: raceAfter.seed,
-        score: raceAfter.score,
-        status: raceAfter.status,
-        startedAt: raceAfter.startedAt,
-        finishedAt: raceAfter.finishedAt
-      },
+      raceRun: mapRaceRunDocument(raceAfter),
       isNewBest,
       bestScore
+    };
+  });
+}
+
+export async function finishTrainingRaceAtomicallyInMongo(
+  client: MongoClient,
+  input: {
+    raceId: string;
+    score: number;
+    seasonId: string;
+    userId: string;
+  }
+): Promise<FinishTrainingRaceAtomicResult> {
+  const db = client.db();
+  const racesColl = db.collection<MongoRaceRunDocument>("raceRuns");
+  const trainingEntriesColl = db.collection<MongoSeasonTrainingEntryDocument>(
+    "seasonTrainingEntries"
+  );
+  const { raceId, score, seasonId, userId } = input;
+
+  return runMongoTransaction(client, async (session) => {
+    const existingEntry = await trainingEntriesColl.findOne({ seasonId, userId }, { session });
+    const oldBest = existingEntry?.bestScore ?? 0;
+    const finishedAt = new Date();
+
+    const raceAfter = await racesColl.findOneAndUpdate(
+      { raceId, status: "started" },
+      { $set: { status: "finished", score, finishedAt } },
+      { session, includeResultMetadata: false, returnDocument: "after" }
+    );
+
+    if (!raceAfter) {
+      const current = await racesColl.findOne({ raceId }, { session });
+      if (current?.status === "finished") {
+        return { kind: "already-finished" };
+      }
+      return { kind: "already-finished" };
+    }
+
+    const now = new Date();
+    const trainingEntryId = existingEntry?.entryId ?? `tentry_${randomUUID()}`;
+    const trainingEntry = await trainingEntriesColl.findOneAndUpdate(
+      { seasonId, userId },
+      {
+        $setOnInsert: {
+          entryId: trainingEntryId,
+          seasonId,
+          userId,
+          createdAt: now
+        },
+        $inc: { totalRaces: 1 },
+        $max: { bestScore: score },
+        $set: { updatedAt: now }
+      },
+      {
+        session,
+        includeResultMetadata: false,
+        returnDocument: "after",
+        upsert: true
+      }
+    );
+
+    if (!trainingEntry) {
+      throw new Error("Training entry update failed.");
+    }
+
+    const isNewBest = trainingEntry.bestScore === score && score > oldBest;
+
+    return {
+      kind: "success",
+      raceRun: mapRaceRunDocument(raceAfter),
+      isNewBest,
+      bestScore: trainingEntry.bestScore
     };
   });
 }

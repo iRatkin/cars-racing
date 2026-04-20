@@ -21,6 +21,17 @@ export interface SeasonEntry {
   createdAt: Date;
 }
 
+export interface SeasonTrainingEntry {
+  entryId: string;
+  seasonId: string;
+  userId: string;
+  bestScore: number;
+  totalRaces: number;
+  createdAt: Date;
+}
+
+export type RaceRunMode = "ranked" | "training";
+
 export type RaceRunStatus = "started" | "finished" | "abandoned";
 
 export interface RaceRun {
@@ -28,6 +39,7 @@ export interface RaceRun {
   seasonId: string;
   userId: string;
   seed: string;
+  mode: RaceRunMode;
   score: number;
   status: RaceRunStatus;
   startedAt: Date;

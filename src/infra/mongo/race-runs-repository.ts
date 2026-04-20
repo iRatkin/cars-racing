@@ -12,6 +12,7 @@ export interface MongoRaceRunDocument {
   seasonId: string;
   userId: string;
   seed: string;
+  mode?: "ranked" | "training";
   score: number;
   status: "started" | "finished" | "abandoned";
   startedAt: Date;
@@ -39,6 +40,7 @@ export class MongoRaceRunsRepository implements RaceRunsRepository {
       seasonId: input.seasonId,
       userId: input.userId,
       seed: input.seed,
+      mode: input.mode,
       score: 0,
       status: "started",
       startedAt
@@ -63,7 +65,7 @@ export class MongoRaceRunsRepository implements RaceRunsRepository {
   }
 }
 
-function mapRaceRunDocument(
+export function mapRaceRunDocument(
   document: WithId<MongoRaceRunDocument> | MongoRaceRunDocument
 ): RaceRun {
   return {
@@ -71,6 +73,7 @@ function mapRaceRunDocument(
     seasonId: document.seasonId,
     userId: document.userId,
     seed: document.seed,
+    mode: document.mode ?? "ranked",
     score: document.score,
     status: document.status,
     startedAt: document.startedAt,

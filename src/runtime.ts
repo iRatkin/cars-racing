@@ -19,6 +19,10 @@ import {
   type MongoSeasonEntryDocument
 } from "./infra/mongo/season-entries-repository.js";
 import {
+  MongoSeasonTrainingEntriesRepository,
+  type MongoSeasonTrainingEntryDocument
+} from "./infra/mongo/season-training-entries-repository.js";
+import {
   MongoSeasonsRepository,
   type MongoSeasonDocument
 } from "./infra/mongo/seasons-repository.js";
@@ -61,6 +65,9 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
   const seasonEntriesRepository = new MongoSeasonEntriesRepository(
     input.db.collection<MongoSeasonEntryDocument>("seasonEntries")
   );
+  const seasonTrainingEntriesRepository = new MongoSeasonTrainingEntriesRepository(
+    input.db.collection<MongoSeasonTrainingEntryDocument>("seasonTrainingEntries")
+  );
   const raceRunsRepository = new MongoRaceRunsRepository(
     input.db.collection<MongoRaceRunDocument>("raceRuns")
   );
@@ -99,6 +106,7 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
     carsCatalogRepository,
     seasonsRepository,
     seasonEntriesRepository,
+    seasonTrainingEntriesRepository,
     raceRunsRepository,
     mongoClient: input.mongoClient,
     createInvoiceLink: (invoiceInput) =>

@@ -365,7 +365,7 @@ paths:
     post:
       tags:
         - Seasons
-      summary: Start a solo race and receive a server seed
+      summary: Start a ranked solo race and receive a server seed
       operationId: startSeasonRace
       security:
         - bearerAuth: []
@@ -417,7 +417,7 @@ paths:
     post:
       tags:
         - Seasons
-      summary: Submit a solo race result
+      summary: Submit a ranked solo race result
       operationId: finishSeasonRace
       security:
         - bearerAuth: []
@@ -471,11 +471,155 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /v1/seasons/{seasonId}/training-races/start:
+    post:
+      tags:
+        - Seasons
+      summary: Start a training solo race on the season map
+      operationId: startSeasonTrainingRace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Training race started with a new raceId and seed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RaceStartResponse"
+        "400":
+          description: seasonId is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Season was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Season is not active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/seasons/{seasonId}/training-races/finish:
+    post:
+      tags:
+        - Seasons
+      summary: Submit a training solo race result
+      operationId: finishSeasonTrainingRace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RaceFinishRequest"
+      responses:
+        "200":
+          description: Training race result recorded and personal highscore updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RaceFinishResponse"
+        "400":
+          description: Invalid body, season mismatch, or invalid seed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: User cannot submit this training race.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Season or race was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Race was already finished.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/seasons/{seasonId}/training-highscore:
+    get:
+      tags:
+        - Seasons
+      summary: Get the authenticated user's training highscore for a season
+      operationId: getSeasonTrainingHighscore
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Personal training progress for the authenticated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingHighscoreResponse"
+        "400":
+          description: seasonId is missing or empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Season was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/seasons/{seasonId}/leaderboard:
     get:
       tags:
         - Seasons
-      summary: Get season leaderboard with competition ranks
+      summary: Get ranked season leaderboard with competition ranks
       operationId: getSeasonLeaderboard
       security:
         - bearerAuth: []
@@ -912,6 +1056,7 @@ components:
         - entered
         - bestScore
         - totalRaces
+        - training
       properties:
         seasonId:
           type: string
@@ -942,6 +1087,8 @@ components:
         totalRaces:
           type: integer
           nullable: true
+        training:
+          $ref: "#/components/schemas/TrainingProgress"
     SeasonDetailResponse:
       type: object
       required:
@@ -955,6 +1102,7 @@ components:
         - entered
         - bestScore
         - totalRaces
+        - training
       properties:
         seasonId:
           type: string
@@ -985,6 +1133,8 @@ components:
         totalRaces:
           type: integer
           nullable: true
+        training:
+          $ref: "#/components/schemas/TrainingProgress"
     SeasonEnterRequest:
       type: object
       additionalProperties: false
@@ -1050,6 +1200,33 @@ components:
         isNewBest:
           type: boolean
         bestScore:
+          type: integer
+          minimum: 0
+    TrainingProgress:
+      type: object
+      required:
+        - bestScore
+        - totalRaces
+      properties:
+        bestScore:
+          type: integer
+          nullable: true
+        totalRaces:
+          type: integer
+          minimum: 0
+    TrainingHighscoreResponse:
+      type: object
+      required:
+        - seasonId
+        - bestScore
+        - totalRaces
+      properties:
+        seasonId:
+          type: string
+        bestScore:
+          type: integer
+          nullable: true
+        totalRaces:
           type: integer
           minimum: 0
     LeaderboardResponse:

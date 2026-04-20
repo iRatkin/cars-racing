@@ -1,9 +1,10 @@
-import type { RaceRun } from "./seasons-domain.js";
+import type { RaceRun, RaceRunMode } from "./seasons-domain.js";
 
 export interface CreateRaceRunInput {
   seasonId: string;
   userId: string;
   seed: string;
+  mode: RaceRunMode;
 }
 
 export interface RaceRunsRepository {

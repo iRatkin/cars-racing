@@ -4,7 +4,7 @@ This file is optimized for future coding agents. Prefer it over rediscovering th
 
 ## System Intent
 
-Build a Phase 0 Telegram Mini App backend for a simple cars game/shop with an internal **race coins** currency and **battle seasons** (time-limited solo races, server-issued seeds, per-season leaderboards).
+Build a Phase 0 Telegram Mini App backend for a simple cars game/shop with an internal **race coins** currency and **battle seasons** (time-limited solo races, server-issued seeds, per-season leaderboards, plus free training runs with a separate personal seasonal highscore).
 
 Target behavior:
 - Telegram Mini App sends signed `initData`.
@@ -15,6 +15,7 @@ Target behavior:
 - User can purchase race coins bundles for Telegram Stars via invoice flow.
 - User can buy cars with race coins (no Telegram Stars involved).
 - Users can enter battle seasons for a configurable race-coins entry fee, run solo races with a server `seed`, submit scores, and view per-season leaderboards (competition ranking).
+- Users can also run **training** races on the active season map for free, without entering the season, and receive a separate personal per-season training highscore.
 - API asks Telegram Bot API for an invoice link when purchasing race coins bundles.
 - Telegram POSTs payment webhook updates (`pre_checkout_query`, `successful_payment`) to the backend.
 - Webhook handler approves pre-checkout, grants race coins on successful payment.
@@ -48,8 +49,12 @@ Game bot `/start` handling:
 Battle seasons:
 - Season documents live in Mongo (`seasons`); `status` is always derived from `startsAt` / `endsAt` and a single request clock (`requestNow`), not stored.
 - Entering a season charges `entryFee` race coins and creates a `seasonEntries` row in one Mongo **multi-document transaction** (requires replica set; local Compose runs Mongo as single-node replica set `rs0`).
-- Finishing a race moves `raceRuns` to `finished` and updates `seasonEntries` (`totalRaces`, `bestScore` via `$max`) in one transaction.
-- `POST /v1/seasons/:seasonId/races/start` creates a `raceRuns` row with `started` and returns `{ raceId, seed }`; finish requires matching `raceId`, `seed`, and `started` status.
+- Ranked race runs and training race runs share the `raceRuns` collection; each run now has `mode: "ranked" | "training"` (legacy rows without `mode` are treated as ranked reads).
+- Finishing a **ranked** race moves `raceRuns` to `finished` and updates `seasonEntries` (`totalRaces`, `bestScore` via `$max`) in one transaction.
+- Finishing a **training** race moves `raceRuns` to `finished` and updates `seasonTrainingEntries` (`totalRaces`, `bestScore` via `$max`) in one transaction.
+- `POST /v1/seasons/:seasonId/races/start` creates a ranked `raceRuns` row with `started` and returns `{ raceId, seed }`; finish requires matching `raceId`, `seed`, `started`, and `mode: "ranked"`.
+- `POST /v1/seasons/:seasonId/training-races/start` creates a training `raceRuns` row with `started` and returns `{ raceId, seed }`; it requires only an active season, not season entry or payment.
+- `GET /v1/seasons` and `GET /v1/seasons/:seasonId` now include a `training` block with the caller's personal training `bestScore` and `totalRaces` for that season.
 
 Starter car detail:
 - Users are inserted into Mongo with `ownedCarIds: []`, `garageRevision: 0`, and `raceCoinsBalance: 0`.
@@ -183,6 +188,9 @@ Implemented routes:
 - `POST /v1/seasons/{seasonId}/enter`
 - `POST /v1/seasons/{seasonId}/races/start`
 - `POST /v1/seasons/{seasonId}/races/finish`
+- `POST /v1/seasons/{seasonId}/training-races/start`
+- `POST /v1/seasons/{seasonId}/training-races/finish`
+- `GET /v1/seasons/{seasonId}/training-highscore`
 - `GET /v1/seasons/{seasonId}/leaderboard`
 - `POST /v1/telegram/webhook`
 - `POST /v1/admin/telegram/webhook` (only when admin env vars are set)
@@ -201,7 +209,7 @@ Common error codes are documented in `swagger.yaml`.
 
 Core API:
 - `src/app.ts`: declares Fastify routes and response behavior.
-- `src/runtime.ts`: creates Mongo repositories (users, cars catalog, purchases, seasons, season entries, race runs), Telegram invoice client, webhook handler, admin bot handler (when admin env vars are present), passes `MongoClient` for season transactions, then calls `buildApp()`.
+- `src/runtime.ts`: creates Mongo repositories (users, cars catalog, purchases, seasons, season entries, season training entries, race runs), Telegram invoice client, webhook handler, admin bot handler (when admin env vars are present), passes `MongoClient` for season transactions, then calls `buildApp()`.
 - `src/server.ts`: loads env, connects Mongo, creates indexes, seeds `carsCatalog` if empty, listens on `0.0.0.0`.
 - `src/config/config.ts`: env parsing and validation (accepts NODE_ENV aliases); parses optional `AdminConfig` from `ADMIN_*` env vars.
 
@@ -211,8 +219,9 @@ Mongo:
 - `src/infra/mongo/purchases-repository.ts`: Mongo implementation of `PurchasesRepository`.
 - `src/infra/mongo/seasons-repository.ts`: Mongo `SeasonsRepository`.
 - `src/infra/mongo/season-entries-repository.ts`: Mongo `SeasonEntriesRepository`.
+- `src/infra/mongo/season-training-entries-repository.ts`: Mongo `SeasonTrainingEntriesRepository`.
 - `src/infra/mongo/race-runs-repository.ts`: Mongo `RaceRunsRepository`.
-- `src/infra/mongo/season-mongo-transactions.ts`: transactional season enter and race finish.
+- `src/infra/mongo/season-mongo-transactions.ts`: transactional season enter, ranked race finish, and training race finish.
 - `src/infra/mongo/indexes.ts`: index definitions and `ensureMongoIndexes()`.
 
 Domain:
@@ -228,9 +237,9 @@ Domain:
 - `src/modules/telegram/invoice-link.ts`: invoice request body builder, Telegram HTTP client, `answerPreCheckoutQuery`, `sendTelegramMessage` (JSON, supports inline/reply keyboards via `TelegramReplyMarkup`), `answerCallbackQuery`, `editMessageText` (inline keyboards only — Telegram limitation), `sendTelegramDocument` (multipart/form-data via global `FormData`/`Blob`).
 - `src/modules/telegram/webhook-domain.ts`: webhook update type guards, validators, `isTelegramBotCommandUpdate`, `extractStartCommandPayload`.
 - `src/modules/telegram/webhook-handler.ts`: real webhook handler (`/start` registration + UTM, `pre_checkout_query`, `successful_payment`); accepts optional `miniAppUrl`.
-- `src/modules/seasons/seasons-domain.ts`: season types, leaderboard view types, `computeSeasonStatus`, `canEnterSeason`, `canStartRace`.
-- `src/modules/seasons/seasons-repository.ts`, `season-entries-repository.ts`, `race-runs-repository.ts`: repository interfaces; `seasons-repository.ts` also exports `validateSeasonDateRange`, `CreateSeasonInput`, `UpdateSeasonInput`.
-- `src/modules/seasons/season-atomic.ts`: result types for transactional season flows.
+- `src/modules/seasons/seasons-domain.ts`: season types, leaderboard view types, training entry types, race run mode types, `computeSeasonStatus`, `canEnterSeason`, `canStartRace`.
+- `src/modules/seasons/seasons-repository.ts`, `season-entries-repository.ts`, `season-training-entries-repository.ts`, `race-runs-repository.ts`: repository interfaces; `seasons-repository.ts` also exports `validateSeasonDateRange`, `CreateSeasonInput`, `UpdateSeasonInput`.
+- `src/modules/seasons/season-atomic.ts`: result types for transactional season flows (ranked and training finish).
 
 Admin module (`src/modules/admin/`):
 - `admin-config.ts`: `PendingAdminAction` + `AdminPendingActionType` union, `parseAdminTelegramIds`, TTL/prize-share constants.
@@ -264,6 +273,7 @@ Docs/spec artifacts:
 - `swagger.yaml`
 - `UPDATES-12-04.md`
 - `docs/12-04/`: session docs and prompts.
+- `docs/20-04/`: training mode docs for frontend/client work.
 
 ## Data Model Snapshot
 
@@ -273,6 +283,7 @@ Collections used now:
 - `purchases`
 - `seasons`
 - `seasonEntries`
+- `seasonTrainingEntries`
 - `raceRuns`
 
 Index definitions also include future/related collections:
@@ -315,7 +326,10 @@ Season entry document shape, see `MongoSeasonEntryDocument`:
 - `entryId`, `seasonId`, `userId`, `bestScore`, `totalRaces`, `entryFeeSnapshot`, timestamps
 
 Race run document shape, see `MongoRaceRunDocument`:
-- `raceId`, `seasonId`, `userId`, `seed`, `score`, `status`, `startedAt`, optional `finishedAt`
+- `raceId`, `seasonId`, `userId`, `seed`, optional `mode` (`"ranked" | "training"`; missing legacy value is treated as ranked), `score`, `status`, `startedAt`, optional `finishedAt`
+
+Season training entry document shape, see `MongoSeasonTrainingEntryDocument`:
+- `entryId`, `seasonId`, `userId`, `bestScore`, `totalRaces`, timestamps
 
 Car catalog document shape, see `MongoCarDocument`:
 - `carId`, `title`, `sortOrder`, `active`, `isStarterDefault`, `isPurchasable`, `price` (`{ currency: "RC", amount: number }`), timestamps
@@ -387,19 +401,33 @@ Car catalog document shape, see `MongoCarDocument`:
 `GET /v1/seasons`:
 - Lists seasons with `endsAt > requestNow`, sorted by `startsAt`.
 - Each item includes computed `status`, `entered`, `bestScore`, `totalRaces` for the JWT user.
+- Each item also includes `training: { bestScore, totalRaces }`, where `bestScore` is `null` and `totalRaces` is `0` until the user finishes at least one training race in that season.
 
 `GET /v1/seasons/{seasonId}`:
-- Returns one season by id (including finished) with the same participation fields.
+- Returns one season by id (including finished) with the same ranked participation fields plus the same personal `training` block.
 
 `POST /v1/seasons/{seasonId}/enter`:
 - Requires season `active` at `requestNow`.
 - Charges `entryFee` and inserts `seasonEntries` in one transaction; `409 ALREADY_ENTERED` if already joined; `422 INSUFFICIENT_BALANCE` if spend would fail.
 
 `POST /v1/seasons/{seasonId}/races/start`:
-- Requires `active` season and existing season entry; creates `raceRuns` with `started` and returns `{ raceId, seed }`.
+- Requires `active` season and existing season entry; creates `raceRuns` with `started`, `mode: "ranked"` and returns `{ raceId, seed }`.
 
 `POST /v1/seasons/{seasonId}/races/finish`:
-- Body `{ raceId, seed, score }`; validates ownership, season match, seed, `started` status; completes run and updates entry in one transaction; `409 RACE_ALREADY_FINISHED` if already done.
+- Body `{ raceId, seed, score }`; validates ownership, season match, seed, `started` status, and `mode: "ranked"`; completes run and updates entry in one transaction; `409 RACE_ALREADY_FINISHED` if already done.
+
+`POST /v1/seasons/{seasonId}/training-races/start`:
+- Requires `active` season only; does **not** require `enter` and does **not** spend race coins.
+- Creates `raceRuns` with `started`, `mode: "training"` and returns `{ raceId, seed }`.
+
+`POST /v1/seasons/{seasonId}/training-races/finish`:
+- Body `{ raceId, seed, score }`; validates ownership, season match, seed, `started` status, and `mode: "training"`.
+- Completes the run and upserts/updates `seasonTrainingEntries` in one transaction.
+- Returns `{ raceId, score, isNewBest, bestScore }` for the training highscore only; never affects ranked leaderboard or ranked season progress.
+
+`GET /v1/seasons/{seasonId}/training-highscore`:
+- Returns the caller's personal training progress for that season as `{ seasonId, bestScore, totalRaces }`.
+- If the player has no finished training runs in that season yet, returns `bestScore: null` and `totalRaces: 0`.
 
 `GET /v1/seasons/{seasonId}/leaderboard`:
 - Query `limit` (default 100, max 100); competition ranks on `bestScore` with stable tie-break (`createdAt`, `userId`); includes `currentPlayer` when entered (even outside top N).

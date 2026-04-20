@@ -148,6 +148,29 @@ export const raceRunsIndexes = [
   }
 ] as const satisfies readonly CollectionIndexDefinition[];
 
+export const seasonTrainingEntriesIndexes = [
+  {
+    keys: { entryId: 1 },
+    options: {
+      name: "seasonTrainingEntries_entryId_unique",
+      unique: true
+    }
+  },
+  {
+    keys: { seasonId: 1, userId: 1 },
+    options: {
+      name: "seasonTrainingEntries_seasonId_userId_unique",
+      unique: true
+    }
+  },
+  {
+    keys: { seasonId: 1, bestScore: -1, createdAt: 1, userId: 1 },
+    options: {
+      name: "seasonTrainingEntries_seasonId_bestScore_createdAt_userId"
+    }
+  }
+] as const satisfies readonly CollectionIndexDefinition[];
+
 export const paymentEventsIndexes = [
   {
     keys: { telegramUpdateId: 1 },
@@ -190,6 +213,7 @@ export async function ensureMongoIndexes(db: MongoIndexDatabase): Promise<void> 
   await createCollectionIndexes(db, "seasons", seasonsIndexes);
   await createCollectionIndexes(db, "seasonEntries", seasonEntriesIndexes);
   await createCollectionIndexes(db, "raceRuns", raceRunsIndexes);
+  await createCollectionIndexes(db, "seasonTrainingEntries", seasonTrainingEntriesIndexes);
 }
 
 async function createCollectionIndexes(
