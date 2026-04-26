@@ -7,6 +7,10 @@ import type {
   UsersRepository,
   UtmSourceCount
 } from "../../modules/users/users-repository.js";
+import {
+  getAutomaticNickCandidates,
+  normalizeNick
+} from "../../modules/users/nickname.js";
 
 export interface MongoUserDocument {
   userId: string;
@@ -17,6 +21,8 @@ export interface MongoUserDocument {
   languageCode?: string;
   isPremium?: boolean;
   photoUrl?: string;
+  nick?: string;
+  nickNormalized?: string;
   ownedCarIds: string[];
   selectedCarId?: string | null;
   garageRevision: number;
@@ -96,11 +102,68 @@ export class MongoUsersRepository implements UsersRepository {
       throw new Error("Mongo did not return an upserted user document");
     }
 
-    return mapUserDocument(document);
+    const user = mapUserDocument(document);
+    if (user.nickNormalized) {
+      return user;
+    }
+
+    return this.setAutomaticNickIfAvailable(user, input);
   }
 
   async getUserById(userId: string): Promise<AppUser | null> {
     const document = await this.collection.findOne({ userId });
+    return document ? mapUserDocument(document) : null;
+  }
+
+  async getUserByNickNormalized(nickNormalized: string): Promise<AppUser | null> {
+    const document = await this.collection.findOne({ nickNormalized });
+    return document ? mapUserDocument(document) : null;
+  }
+
+  async setInitialNick(
+    userId: string,
+    nick: string,
+    nickNormalized: string
+  ): Promise<AppUser | null> {
+    const document = await this.collection.findOneAndUpdate(
+      { userId, nickNormalized: { $exists: false } },
+      {
+        $set: {
+          nick,
+          nickNormalized,
+          updatedAt: new Date()
+        }
+      },
+      { includeResultMetadata: false, returnDocument: "after" }
+    );
+    return document ? mapUserDocument(document) : null;
+  }
+
+  async changeNickWithRaceCoins(
+    userId: string,
+    nick: string,
+    nickNormalized: string,
+    price: number
+  ): Promise<AppUser | null> {
+    if (!Number.isInteger(price) || price < 0) {
+      throw new Error("changeNickWithRaceCoins expects a non-negative integer price");
+    }
+    const document = await this.collection.findOneAndUpdate(
+      {
+        userId,
+        nickNormalized: { $exists: true },
+        raceCoinsBalance: { $gte: price }
+      },
+      {
+        $set: {
+          nick,
+          nickNormalized,
+          updatedAt: new Date()
+        },
+        $inc: { raceCoinsBalance: -price }
+      },
+      { includeResultMetadata: false, returnDocument: "after" }
+    );
     return document ? mapUserDocument(document) : null;
   }
 
@@ -235,6 +298,32 @@ export class MongoUsersRepository implements UsersRepository {
       .toArray();
     return rows.map((row) => ({ utmSource: row.utmSource, count: row.count }));
   }
+
+  private async setAutomaticNickIfAvailable(
+    user: AppUser,
+    input: UpsertTelegramUserInput
+  ): Promise<AppUser> {
+    for (const nick of getAutomaticNickCandidates(input)) {
+      try {
+        const updated = await this.setInitialNick(
+          user.userId,
+          nick,
+          normalizeNick(nick)
+        );
+        if (updated) {
+          return updated;
+        }
+        const current = await this.getUserById(user.userId);
+        return current ?? user;
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    return user;
+  }
 }
 
 export function buildUserId(telegramUserId: string): string {
@@ -251,6 +340,8 @@ export function mapUserDocument(document: WithId<MongoUserDocument> | MongoUserD
     languageCode: document.languageCode,
     isPremium: document.isPremium,
     photoUrl: document.photoUrl,
+    nick: document.nick,
+    nickNormalized: document.nickNormalized,
     ownedCarIds: [...(document.ownedCarIds ?? [])],
     selectedCarId: document.selectedCarId,
     garageRevision: document.garageRevision,
@@ -265,4 +356,13 @@ export function mapUserDocument(document: WithId<MongoUserDocument> | MongoUserD
         }
       : undefined
   };
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === 11000
+  );
 }

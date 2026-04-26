@@ -15,6 +15,8 @@ export interface AppUser {
   languageCode?: string;
   isPremium?: boolean;
   photoUrl?: string;
+  nick?: string;
+  nickNormalized?: string;
   ownedCarIds: string[];
   selectedCarId?: string | null;
   garageRevision: number;
@@ -40,6 +42,18 @@ export interface UtmSourceCount {
 export interface UsersRepository {
   upsertTelegramUser(input: UpsertTelegramUserInput): Promise<AppUser>;
   getUserById(userId: string): Promise<AppUser | null>;
+  getUserByNickNormalized(nickNormalized: string): Promise<AppUser | null>;
+  setInitialNick(
+    userId: string,
+    nick: string,
+    nickNormalized: string
+  ): Promise<AppUser | null>;
+  changeNickWithRaceCoins(
+    userId: string,
+    nick: string,
+    nickNormalized: string,
+    price: number
+  ): Promise<AppUser | null>;
   addRaceCoins(userId: string, amount: number): Promise<AppUser>;
   spendRaceCoins(userId: string, amount: number): Promise<AppUser | null>;
   addOwnedCar(userId: string, carId: string): Promise<AppUser | null>;

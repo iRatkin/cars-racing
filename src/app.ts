@@ -24,6 +24,11 @@ import { classifyPurchaseIntentRetry } from "./modules/payments/purchase-domain.
 import type { PurchaseIntentRecord, PurchasesRepository } from "./modules/payments/purchases-repository.js";
 import { getBundleById } from "./modules/race-coins/race-coins-catalog.js";
 import { compareTelegramWebhookSecretToken } from "./modules/telegram/webhook-domain.js";
+import {
+  buildPublicNick,
+  isValidNick,
+  normalizeNick
+} from "./modules/users/nickname.js";
 import { ensureStarterCarState } from "./modules/users/starter-car.js";
 import type { UsersRepository } from "./modules/users/users-repository.js";
 import {
@@ -69,6 +74,10 @@ const coinsIntentBodySchema = z.object({
 
 const buyCarBodySchema = z.object({
   carId: z.string().min(1)
+});
+
+const updateNickBodySchema = z.object({
+  nick: z.string().min(1)
 });
 
 const seasonIdParamSchema = z.object({
@@ -254,6 +263,7 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
             telegramUserId: user.telegramUserId,
             firstName: user.firstName,
             username: user.username,
+            nick: buildPublicNick(user),
             ownedCarIds: starterState.ownedCarIds,
             garageRevision: starterState.garageRevision,
             raceCoinsBalance: user.raceCoinsBalance ?? 0
@@ -270,6 +280,69 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           return reply.code(401).send({ code: "INIT_DATA_INVALID" });
         }
 
+        throw error;
+      }
+    });
+
+    app.put("/v1/profile/nick", async (request, reply) => {
+      const tokenPayload = await verifyJwtOrReject(request, reply);
+      if (!tokenPayload) {
+        return;
+      }
+
+      const parsedBody = updateNickBodySchema.safeParse(request.body);
+      if (!parsedBody.success || !isValidNick(parsedBody.data.nick)) {
+        return reply.code(400).send({ code: "INVALID_NICK" });
+      }
+
+      const user = await userRepo.getUserById(tokenPayload.sub);
+      if (!user) {
+        return reply.code(404).send({ code: "USER_NOT_FOUND" });
+      }
+
+      const nick = parsedBody.data.nick;
+      const nickNormalized = normalizeNick(nick);
+      const nickChangePrice = appConfig.nickChangePriceRaceCoins;
+
+      if (user.nickNormalized === nickNormalized) {
+        return reply.send(formatNickResponse(user, nickChangePrice));
+      }
+
+      const existingNickUser = await userRepo.getUserByNickNormalized(nickNormalized);
+      if (existingNickUser && existingNickUser.userId !== user.userId) {
+        return reply.code(409).send({ code: "NICK_ALREADY_TAKEN" });
+      }
+
+      const hasPersistedNick = Boolean(user.nickNormalized);
+      try {
+        const updatedUser = hasPersistedNick
+          ? await userRepo.changeNickWithRaceCoins(
+              user.userId,
+              nick,
+              nickNormalized,
+              nickChangePrice
+            )
+          : await userRepo.setInitialNick(user.userId, nick, nickNormalized);
+
+        if (!updatedUser) {
+          const latestUser = await userRepo.getUserById(user.userId);
+          if (!latestUser) {
+            return reply.code(404).send({ code: "USER_NOT_FOUND" });
+          }
+          if (latestUser.nickNormalized === nickNormalized) {
+            return reply.send(formatNickResponse(latestUser, nickChangePrice));
+          }
+          if (hasPersistedNick) {
+            return reply.code(422).send({ code: "INSUFFICIENT_BALANCE" });
+          }
+          return reply.code(409).send({ code: "NICK_ALREADY_TAKEN" });
+        }
+
+        return reply.send(formatNickResponse(updatedUser, nickChangePrice));
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return reply.code(409).send({ code: "NICK_ALREADY_TAKEN" });
+        }
         throw error;
       }
     });
@@ -796,8 +869,9 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           entries.push({
             rank,
             userId: seasonEntry.userId,
-            username: user?.username,
-            firstName: user?.firstName,
+            nick: user ? buildPublicNick(user) : buildPublicNick({
+              telegramUserId: telegramUserIdFromUserId(seasonEntry.userId)
+            }),
             bestScore: seasonEntry.bestScore,
             totalRaces: seasonEntry.totalRaces
           });
@@ -822,8 +896,9 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
             currentPlayer = {
               rank: playerRank ?? totalParticipants,
               userId: playerEntry.userId,
-              username: playerUser?.username,
-              firstName: playerUser?.firstName,
+              nick: playerUser ? buildPublicNick(playerUser) : buildPublicNick({
+                telegramUserId: telegramUserIdFromUserId(playerEntry.userId)
+              }),
               bestScore: playerEntry.bestScore,
               totalRaces: playerEntry.totalRaces
             };
@@ -865,6 +940,10 @@ function stringOrUndefined(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function telegramUserIdFromUserId(userId: string): string {
+  return userId.startsWith("usr_") ? userId.slice(4) : userId;
+}
+
 async function verifyJwtOrReject(
   request: FastifyRequest,
   reply: FastifyReply
@@ -901,5 +980,16 @@ function formatCoinsIntentResponse(intent: {
     expiresAt: intent.expiresAt.toISOString(),
     price: intent.priceSnapshot,
     coinsAmount: intent.coinsAmount
+  };
+}
+
+function formatNickResponse(
+  user: { telegramUserId: string; nick?: string; raceCoinsBalance: number },
+  nickChangePrice: number
+) {
+  return {
+    nick: buildPublicNick(user),
+    raceCoinsBalance: user.raceCoinsBalance ?? 0,
+    nickChangePrice
   };
 }

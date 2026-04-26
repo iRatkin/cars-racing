@@ -8,6 +8,7 @@ info:
     - Garage state and race coins balance.
     - Race coins purchase intents via Telegram Stars invoice flow.
     - Car purchases with race coins.
+    - Public player nicknames with paid rename flow.
     - Battle seasons with solo races and per-season leaderboards.
     - Telegram payment webhooks (`pre_checkout_query`, `successful_payment`).
     - Optional admin Telegram bot webhook guarded by a separate secret and a
@@ -18,6 +19,7 @@ servers:
 tags:
   - name: Health
   - name: Auth
+  - name: Profile
   - name: Garage
   - name: Purchases
   - name: Seasons
@@ -111,6 +113,69 @@ paths:
                 userNotFound:
                   value:
                     code: USER_NOT_FOUND
+  /v1/profile/nick:
+    put:
+      tags:
+        - Profile
+      summary: Set or change the authenticated user's public nickname
+      operationId: updateProfileNick
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNickRequest"
+      responses:
+        "200":
+          description: Nickname was set or changed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateNickResponse"
+        "400":
+          description: Nick is missing or violates nickname rules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidNick:
+                  value:
+                    code: INVALID_NICK
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The authenticated user no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Another user already owns this nickname.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                nickAlreadyTaken:
+                  value:
+                    code: NICK_ALREADY_TAKEN
+        "422":
+          description: Existing nickname change requires more race coins.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                insufficientBalance:
+                  value:
+                    code: INSUFFICIENT_BALANCE
   /v1/purchases/coins-intents:
     post:
       tags:
@@ -778,6 +843,8 @@ components:
             - INIT_DATA_INVALID
             - UNAUTHORIZED
             - USER_NOT_FOUND
+            - INVALID_NICK
+            - NICK_ALREADY_TAKEN
             - CAR_ID_REQUIRED
             - CAR_NOT_FOUND
             - CAR_NOT_PURCHASABLE
@@ -826,6 +893,7 @@ components:
       required:
         - userId
         - telegramUserId
+        - nick
         - ownedCarIds
         - garageRevision
         - raceCoinsBalance
@@ -844,6 +912,12 @@ components:
           type: string
           nullable: true
           example: ivan_dev
+        nick:
+          type: string
+          minLength: 3
+          maxLength: 20
+          pattern: "^[A-Za-z0-9_]{3,20}$"
+          example: Ivan_42
         ownedCarIds:
           type: array
           items:
@@ -857,6 +931,38 @@ components:
           type: integer
           minimum: 0
           example: 0
+    UpdateNickRequest:
+      type: object
+      required:
+        - nick
+      properties:
+        nick:
+          type: string
+          minLength: 3
+          maxLength: 20
+          pattern: "^[A-Za-z0-9_]{3,20}$"
+          example: Ivan_42
+    UpdateNickResponse:
+      type: object
+      required:
+        - nick
+        - raceCoinsBalance
+        - nickChangePrice
+      properties:
+        nick:
+          type: string
+          minLength: 3
+          maxLength: 20
+          pattern: "^[A-Za-z0-9_]{3,20}$"
+          example: Ivan_42
+        raceCoinsBalance:
+          type: integer
+          minimum: 0
+          example: 900
+        nickChangePrice:
+          type: integer
+          minimum: 0
+          example: 100
     GarageResponse:
       type: object
       required:
@@ -1255,6 +1361,7 @@ components:
       required:
         - rank
         - userId
+        - nick
         - bestScore
         - totalRaces
       properties:
@@ -1263,12 +1370,11 @@ components:
           minimum: 1
         userId:
           type: string
-        username:
+        nick:
           type: string
-          nullable: true
-        firstName:
-          type: string
-          nullable: true
+          minLength: 3
+          maxLength: 20
+          pattern: "^[A-Za-z0-9_]{3,20}$"
         bestScore:
           type: integer
           minimum: 0

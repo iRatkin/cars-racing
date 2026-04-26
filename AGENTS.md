@@ -10,6 +10,7 @@ Target behavior:
 - Telegram Mini App sends signed `initData`.
 - API validates `initData` with `BOT_TOKEN`.
 - API creates or updates an app user.
+- User has a public game `nick` for Unity/player-facing statistics.
 - User always sees a starter car.
 - User can view garage/catalog state and their race coins balance.
 - User can purchase race coins bundles for Telegram Stars via invoice flow.
@@ -45,6 +46,14 @@ Game bot `/start` handling:
 - If `/start <payload>` contains a base64url-encoded UTM payload, it is parsed and saved via `setUtmIfNotSet` (first-touch attribution, never overwritten).
 - Bot replies with a welcome message; if `MINI_APP_URL` is set, includes an inline `web_app` button to open the Mini App.
 - UTM payload format: base64url of `{"s":"<source>","m":"<medium>","c":"<campaign>","cn":"<content>","t":"<term>"}` (all keys except `s` are optional).
+
+Nicknames:
+- Users can set or change their public game nickname via `PUT /v1/profile/nick`.
+- Nick rules: 3-20 chars, Latin letters/digits/underscore only, case-insensitive uniqueness via `nickNormalized`.
+- `upsertTelegramUser` initializes `nick` from valid available Telegram `username`, then `firstName`, only when the user has no persisted nick.
+- Public responses always expose `nick`; if no persisted nick exists, API returns non-persisted fallback `p_<telegramUserId>`.
+- First manual nick set is free when no persisted `nick` exists. Changing an existing nick costs `NICK_CHANGE_PRICE_RC` race coins.
+- Admin bot screens continue to use Telegram profile fields, not public game nick.
 
 Battle seasons:
 - Season documents live in Mongo (`seasons`); `status` is always derived from `startsAt` / `endsAt` and a single request clock (`requestNow`), not stored.
@@ -154,6 +163,7 @@ Required:
 
 Optional:
 - `MINI_APP_URL`: URL of the Mini App shown as `web_app` button on `/start`; if absent, bot sends plain text welcome.
+- `NICK_CHANGE_PRICE_RC`: non-negative integer race-coins price for changing an existing nick; default `100`.
 - `NODE_ENV`: `dev`, `stage`, `prod` (also accepts `development`, `staging`, `production`); default `dev`
 - `PORT`: integer; default `3000`
 
@@ -166,6 +176,7 @@ Compose defaults:
 - `BOT_TOKEN=123456:test-token`
 - `JWT_SECRET=dev-jwt-secret-change-me`
 - `MONGO_URI=mongodb://mongo:27017/mafinki`
+- `NICK_CHANGE_PRICE_RC=100`
 - `NODE_ENV=dev`
 - `PORT=3000`
 - `TELEGRAM_WEBHOOK_SECRET=dev-webhook-secret`
@@ -181,6 +192,7 @@ Implemented routes:
 - `GET /health`
 - `POST /v1/auth/telegram`
 - `GET /v1/garage`
+- `PUT /v1/profile/nick`
 - `POST /v1/purchases/coins-intents`
 - `POST /v1/purchases/buy-car`
 - `GET /v1/seasons`
@@ -197,6 +209,7 @@ Implemented routes:
 
 Auth:
 - `GET /v1/garage` requires `Authorization: Bearer <jwt>`.
+- `PUT /v1/profile/nick` requires `Authorization: Bearer <jwt>`.
 - `POST /v1/purchases/coins-intents` requires `Authorization: Bearer <jwt>`.
 - `POST /v1/purchases/buy-car` requires `Authorization: Bearer <jwt>`.
 - All `/v1/seasons` routes require `Authorization: Bearer <jwt>`.
@@ -226,6 +239,7 @@ Mongo:
 
 Domain:
 - `src/modules/auth/telegram-init-data.ts`: Telegram Mini App initData validation.
+- `src/modules/users/nickname.ts`: public nick validation, normalization, automatic candidate selection, and display fallback.
 - `src/modules/users/starter-car.ts`: derived starter car state.
 - `src/modules/users/users-repository.ts`: `AppUser` type, `UsersRepository` interface (including `getAllUsers()` used by admin export and `getUtmSourcesSince(date)` used by the admin Today-UTM report), `UtmSourceCount` type.
 - `src/modules/cars-catalog/cars-catalog.ts`: `PHASE_0_CAR_CATALOG` seed data array (source of truth for initial Mongo seed only).
@@ -293,6 +307,7 @@ User document shape, see `MongoUserDocument`:
 - `userId`
 - `telegramUserId`
 - profile fields from Telegram
+- optional public nickname fields: `nick`, `nickNormalized`
 - `ownedCarIds`
 - `selectedCarId`
 - `garageRevision`
@@ -340,9 +355,21 @@ Car catalog document shape, see `MongoCarDocument`:
 - Body: `{ "initData": string }`
 - Validates Telegram signature and max age (15 min).
 - Upserts user by Telegram ID.
+- Initializes `nick` from Telegram `username` / `firstName` when valid, available, and missing.
 - Signs JWT for 12 hours.
-- Returns profile with derived starter car state and `raceCoinsBalance`.
+- Returns profile with derived starter car state, public `nick`, and `raceCoinsBalance`.
 - Dev mode logs `initData` and full response body.
+
+`PUT /v1/profile/nick`:
+- Verifies JWT.
+- Body: `{ "nick": string }`.
+- Validates nick as 3-20 chars, Latin letters/digits/underscore only.
+- Case-insensitive duplicate check uses `nickNormalized`.
+- If the user has no persisted nick, sets it for free.
+- If the user already has the same normalized nick, returns success without spending.
+- If the user changes an existing nick, spends `NICK_CHANGE_PRICE_RC` race coins.
+- Returns `{ nick, raceCoinsBalance, nickChangePrice }`.
+- Errors: `INVALID_NICK`, `NICK_ALREADY_TAKEN`, `INSUFFICIENT_BALANCE`, `USER_NOT_FOUND`.
 
 `GET /v1/garage`:
 - Verifies JWT.
@@ -430,7 +457,7 @@ Car catalog document shape, see `MongoCarDocument`:
 - If the player has no finished training runs in that season yet, returns `bestScore: null` and `totalRaces: 0`.
 
 `GET /v1/seasons/{seasonId}/leaderboard`:
-- Query `limit` (default 100, max 100); competition ranks on `bestScore` with stable tie-break (`createdAt`, `userId`); includes `currentPlayer` when entered (even outside top N).
+- Query `limit` (default 100, max 100); competition ranks on `bestScore` with stable tie-break (`createdAt`, `userId`); includes public `nick` and `currentPlayer` when entered (even outside top N).
 
 ## Catalog Snapshot
 

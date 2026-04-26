@@ -35,6 +35,14 @@ export const usersIndexes = [
     }
   },
   {
+    keys: { nickNormalized: 1 },
+    options: {
+      name: "users_nickNormalized_unique",
+      partialFilterExpression: { nickNormalized: { $type: "string" } },
+      unique: true
+    }
+  },
+  {
     keys: { utmSource: 1 },
     options: {
       name: "users_utmSource",

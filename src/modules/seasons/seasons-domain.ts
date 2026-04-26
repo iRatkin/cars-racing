@@ -49,8 +49,7 @@ export interface RaceRun {
 export interface LeaderboardEntry {
   rank: number;
   userId: string;
-  username?: string;
-  firstName?: string;
+  nick: string;
   bestScore: number;
   totalRaces: number;
 }

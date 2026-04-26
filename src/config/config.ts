@@ -6,6 +6,7 @@ export interface AppConfig {
   mongoUri: string;
   telegramWebhookSecret: string;
   miniAppUrl: string | undefined;
+  nickChangePriceRaceCoins: number;
   env: "dev" | "stage" | "prod";
   port: number;
   adminConfig?: AdminConfig;
@@ -54,6 +55,11 @@ export function loadConfigFromEnv(
     mongoUri,
     telegramWebhookSecret,
     miniAppUrl: env.MINI_APP_URL || "https://thelightone.github.io/DriftHTML/",
+    nickChangePriceRaceCoins: parseNonNegativeInteger(
+      env.NICK_CHANGE_PRICE_RC,
+      "NICK_CHANGE_PRICE_RC",
+      100
+    ),
     env: parseEnvName(env.NODE_ENV),
     port: parsePort(env.PORT),
     adminConfig,
@@ -92,4 +98,19 @@ function parsePort(value: string | undefined): number {
     throw new Error(`Invalid PORT: ${value}`);
   }
   return port;
+}
+
+function parseNonNegativeInteger(
+  value: string | undefined,
+  key: string,
+  defaultValue: number
+): number {
+  if (!value) {
+    return defaultValue;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid ${key}: ${value}`);
+  }
+  return parsed;
 }
