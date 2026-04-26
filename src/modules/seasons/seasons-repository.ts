@@ -22,6 +22,8 @@ export interface SeasonsRepository {
   getSeasonById(seasonId: string, referenceNow: Date): Promise<Season | null>;
   getActiveAndUpcomingSeasons(referenceNow: Date): Promise<Season[]>;
   getAllSeasons(referenceNow: Date): Promise<Season[]>;
+  findSeasonForWindow(windowStart: Date, windowEnd: Date, referenceNow: Date): Promise<Season | null>;
+  findLatestSeasonBefore(windowStart: Date, referenceNow: Date): Promise<Season | null>;
   createSeason(input: CreateSeasonInput, referenceNow: Date): Promise<Season>;
   updateSeason(seasonId: string, patch: UpdateSeasonInput, referenceNow: Date): Promise<Season | null>;
 }

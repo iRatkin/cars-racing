@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "jobs:season-tick": "node dist/src/jobs/season-tick.js",
     "start": "node -e \"const e=process.env; console.log('RAILWAY_ENV:', e.RAILWAY_ENVIRONMENT_NAME); console.log('RAILWAY_SERVICE:', e.RAILWAY_SERVICE_NAME); console.log('BOT_TOKEN exists:', 'BOT_TOKEN' in e, 'len:', (e.BOT_TOKEN||'').length); console.log('MONGO_URI exists:', 'MONGO_URI' in e, 'len:', (e.MONGO_URI||'').length)\" && node dist/src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",

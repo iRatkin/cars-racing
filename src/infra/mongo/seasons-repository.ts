@@ -28,6 +28,9 @@ export interface SeasonsCollection {
   findOne(filter: { seasonId: string }): Promise<WithId<MongoSeasonDocument> | MongoSeasonDocument | null>;
   find(filter: Record<string, unknown>): {
     sort(sort: Record<string, 1 | -1>): {
+      limit(limit: number): {
+        toArray(): Promise<Array<WithId<MongoSeasonDocument> | MongoSeasonDocument>>;
+      };
       toArray(): Promise<Array<WithId<MongoSeasonDocument> | MongoSeasonDocument>>;
     };
   };
@@ -58,6 +61,36 @@ export class MongoSeasonsRepository implements SeasonsRepository {
   async getAllSeasons(referenceNow: Date): Promise<Season[]> {
     const rows = await this.collection.find({}).sort({ startsAt: -1 }).toArray();
     return rows.map((document) => mapSeasonDocument(document, referenceNow));
+  }
+
+  async findSeasonForWindow(
+    windowStart: Date,
+    windowEnd: Date,
+    referenceNow: Date
+  ): Promise<Season | null> {
+    const rows = await this.collection
+      .find({
+        $or: [
+          { startsAt: { $lte: windowStart }, endsAt: { $gt: windowStart } },
+          { startsAt: { $gte: windowStart, $lt: windowEnd } }
+        ]
+      })
+      .sort({ startsAt: 1 })
+      .limit(1)
+      .toArray();
+    return rows[0] ? mapSeasonDocument(rows[0], referenceNow) : null;
+  }
+
+  async findLatestSeasonBefore(
+    windowStart: Date,
+    referenceNow: Date
+  ): Promise<Season | null> {
+    const rows = await this.collection
+      .find({ startsAt: { $lt: windowStart } })
+      .sort({ startsAt: -1 })
+      .limit(1)
+      .toArray();
+    return rows[0] ? mapSeasonDocument(rows[0], referenceNow) : null;
   }
 
   async createSeason(input: CreateSeasonInput, referenceNow: Date): Promise<Season> {

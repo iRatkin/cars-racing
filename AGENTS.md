@@ -65,6 +65,16 @@ Battle seasons:
 - `POST /v1/seasons/:seasonId/training-races/start` creates a training `raceRuns` row with `started` and returns `{ raceId, seed }`; it requires only an active season, not season entry or payment.
 - `GET /v1/seasons` and `GET /v1/seasons/:seasonId` now include a `training` block with the caller's personal training `bestScore` and `totalRaces` for that season.
 
+Season automation:
+- Portable one-shot runner: `npm run build && npm run jobs:season-tick`.
+- Intended external schedule: every 5-15 minutes from Railway Cron, GitHub Actions, VPS cron, or any equivalent scheduler.
+- Railway evaluates cron in UTC; the weekly boundary expression for Wednesday 20:00 MSK is `0 17 * * 3`, but the preferred resilient tick is `*/15 * * * *` with Mongo idempotency.
+- Weekly season boundary is Wednesday 20:00 `Europe/Moscow` (implemented as UTC+03:00 for Phase 0).
+- If no manually created season exists for the current weekly window, the runner clones the latest previous season's `title`, `mapId`, `entryFee`, and `prizePoolShare`, then assigns the current weekly window dates.
+- Player notifications are sent by the main bot at season start, 3 days before end, 1 day before end, and 6 hours before end.
+- Admin bot sends top-10 ranked leaderboard summaries after season end when admin env vars are configured.
+- `jobEvents` stores idempotency records for season creation and notification events.
+
 Starter car detail:
 - Users are inserted into Mongo with `ownedCarIds: []`, `garageRevision: 0`, and `raceCoinsBalance: 0`.
 - Routes call `ensureStarterCarState()` and return derived starter ownership.
@@ -130,6 +140,13 @@ Build:
 
 ```bash
 npm run build
+```
+
+Run one season automation tick:
+
+```bash
+npm run build
+npm run jobs:season-tick
 ```
 
 Run built app locally:
@@ -225,6 +242,7 @@ Core API:
 - `src/runtime.ts`: creates Mongo repositories (users, cars catalog, purchases, seasons, season entries, season training entries, race runs), Telegram invoice client, webhook handler, admin bot handler (when admin env vars are present), passes `MongoClient` for season transactions, then calls `buildApp()`.
 - `src/server.ts`: loads env, connects Mongo, creates indexes, seeds `carsCatalog` if empty, listens on `0.0.0.0`.
 - `src/config/config.ts`: env parsing and validation (accepts NODE_ENV aliases); parses optional `AdminConfig` from `ADMIN_*` env vars.
+- `src/jobs/season-tick.ts`: one-shot season automation runner for external cron providers.
 
 Mongo:
 - `src/infra/mongo/users-repository.ts`: Mongo implementation of `UsersRepository`.
@@ -234,6 +252,7 @@ Mongo:
 - `src/infra/mongo/season-entries-repository.ts`: Mongo `SeasonEntriesRepository`.
 - `src/infra/mongo/season-training-entries-repository.ts`: Mongo `SeasonTrainingEntriesRepository`.
 - `src/infra/mongo/race-runs-repository.ts`: Mongo `RaceRunsRepository`.
+- `src/infra/mongo/job-events-repository.ts`: Mongo idempotency repository for one-shot jobs.
 - `src/infra/mongo/season-mongo-transactions.ts`: transactional season enter, ranked race finish, and training race finish.
 - `src/infra/mongo/indexes.ts`: index definitions and `ensureMongoIndexes()`.
 
@@ -254,6 +273,7 @@ Domain:
 - `src/modules/seasons/seasons-domain.ts`: season types, leaderboard view types, training entry types, race run mode types, `computeSeasonStatus`, `canEnterSeason`, `canStartRace`.
 - `src/modules/seasons/seasons-repository.ts`, `season-entries-repository.ts`, `season-training-entries-repository.ts`, `race-runs-repository.ts`: repository interfaces; `seasons-repository.ts` also exports `validateSeasonDateRange`, `CreateSeasonInput`, `UpdateSeasonInput`.
 - `src/modules/seasons/season-atomic.ts`: result types for transactional season flows (ranked and training finish).
+- `src/modules/season-automation/`: schedule calculations, Telegram message formatting, job event interface, and automation orchestration service.
 
 Admin module (`src/modules/admin/`):
 - `admin-config.ts`: `PendingAdminAction` + `AdminPendingActionType` union, `parseAdminTelegramIds`, TTL/prize-share constants.
@@ -299,6 +319,7 @@ Collections used now:
 - `seasonEntries`
 - `seasonTrainingEntries`
 - `raceRuns`
+- `jobEvents`
 
 Index definitions also include future/related collections:
 - `paymentEvents`
@@ -345,6 +366,16 @@ Race run document shape, see `MongoRaceRunDocument`:
 
 Season training entry document shape, see `MongoSeasonTrainingEntryDocument`:
 - `entryId`, `seasonId`, `userId`, `bestScore`, `totalRaces`, timestamps
+
+Job event document shape, see `MongoJobEventDocument`:
+- `eventKey`
+- `eventType`
+- `seasonId`
+- `scheduledAt`
+- `status` (`started`, `completed`, `failed`)
+- `attempts`
+- optional `lastError`
+- timestamps
 
 Car catalog document shape, see `MongoCarDocument`:
 - `carId`, `title`, `sortOrder`, `active`, `isStarterDefault`, `isPurchasable`, `price` (`{ currency: "RC", amount: number }`), timestamps
