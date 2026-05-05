@@ -164,6 +164,8 @@ export async function finishTrainingRaceAtomicallyInMongo(
     score: number;
     seasonId: string;
     userId: string;
+    timeSeconds: number;
+    raceCoinsEarned: number;
   }
 ): Promise<FinishTrainingRaceAtomicResult> {
   const db = client.db();
@@ -171,7 +173,10 @@ export async function finishTrainingRaceAtomicallyInMongo(
   const trainingEntriesColl = db.collection<MongoSeasonTrainingEntryDocument>(
     "seasonTrainingEntries"
   );
+  const usersColl = db.collection<MongoUserDocument>("users");
   const { raceId, score, seasonId, userId } = input;
+  const timeSeconds = input.timeSeconds;
+  const raceCoinsEarned = input.raceCoinsEarned;
 
   return runMongoTransaction(client, async (session) => {
     const existingEntry = await trainingEntriesColl.findOne({ seasonId, userId }, { session });
@@ -180,7 +185,7 @@ export async function finishTrainingRaceAtomicallyInMongo(
 
     const raceAfter = await racesColl.findOneAndUpdate(
       { raceId, status: "started" },
-      { $set: { status: "finished", score, finishedAt } },
+      { $set: { status: "finished", score, timeSeconds, raceCoinsEarned, finishedAt } },
       { session, includeResultMetadata: false, returnDocument: "after" }
     );
 
@@ -220,12 +225,23 @@ export async function finishTrainingRaceAtomicallyInMongo(
     }
 
     const isNewBest = trainingEntry.bestScore === score && score > oldBest;
+    const userAfterReward = await usersColl.findOneAndUpdate(
+      { userId },
+      { $inc: { raceCoinsBalance: raceCoinsEarned }, $set: { updatedAt: now } },
+      { session, includeResultMetadata: false, returnDocument: "after" }
+    );
+
+    if (!userAfterReward) {
+      throw new Error("User reward update failed.");
+    }
 
     return {
       kind: "success",
       raceRun: mapRaceRunDocument(raceAfter),
       isNewBest,
-      bestScore: trainingEntry.bestScore
+      bestScore: trainingEntry.bestScore,
+      raceCoinsEarned,
+      user: mapUserDocument(userAfterReward)
     };
   });
 }

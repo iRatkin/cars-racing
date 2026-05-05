@@ -90,6 +90,11 @@ const raceFinishBodySchema = z.object({
   score: z.number().int().min(0)
 });
 
+const trainingRaceFinishBodySchema = raceFinishBodySchema.extend({
+  timeSeconds: z.number().finite().min(0),
+  raceCoinsEarned: z.number().int().min(1).max(20)
+});
+
 export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
   const {
     config,
@@ -758,7 +763,7 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           return reply.code(400).send({ code: "SEASON_ID_REQUIRED" });
         }
 
-        const parsedBody = raceFinishBodySchema.safeParse(request.body);
+        const parsedBody = trainingRaceFinishBodySchema.safeParse(request.body);
         if (!parsedBody.success) {
           return reply.code(400).send({ code: "INVALID_RACE_RESULT" });
         }
@@ -794,7 +799,9 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           raceId: raceRun.raceId,
           score: parsedBody.data.score,
           seasonId: season.seasonId,
-          userId: tokenPayload.sub
+          userId: tokenPayload.sub,
+          timeSeconds: parsedBody.data.timeSeconds,
+          raceCoinsEarned: parsedBody.data.raceCoinsEarned
         });
         if (finishResult.kind === "already-finished") {
           return reply.code(409).send({ code: "RACE_ALREADY_FINISHED" });
@@ -804,7 +811,9 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           raceId: finishResult.raceRun.raceId,
           score: finishResult.raceRun.score,
           isNewBest: finishResult.isNewBest,
-          bestScore: finishResult.bestScore
+          bestScore: finishResult.bestScore,
+          raceCoinsEarned: finishResult.raceCoinsEarned,
+          raceCoinsBalance: finishResult.user.raceCoinsBalance
         });
       });
 

@@ -41,6 +41,8 @@ export interface RaceRun {
   seed: string;
   mode: RaceRunMode;
   score: number;
+  timeSeconds?: number;
+  raceCoinsEarned?: number;
   status: RaceRunStatus;
   startedAt: Date;
   finishedAt?: Date;

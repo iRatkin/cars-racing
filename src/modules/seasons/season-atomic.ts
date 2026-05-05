@@ -12,4 +12,11 @@ export type FinishSeasonRaceAtomicResult =
 
 export type FinishTrainingRaceAtomicResult =
   | { kind: "already-finished" }
-  | { kind: "success"; raceRun: RaceRun; isNewBest: boolean; bestScore: number };
+  | {
+      kind: "success";
+      raceRun: RaceRun;
+      isNewBest: boolean;
+      bestScore: number;
+      raceCoinsEarned: number;
+      user: AppUser;
+    };

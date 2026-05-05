@@ -178,10 +178,12 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
     const { chatId, text, rawText, adminId } = params;
     const session = sessions.get(adminId);
     if (!session) {
+      await recoverResetSession(chatId, adminId);
       return;
     }
     if (session.expiresAt < Date.now()) {
       sessions.delete(adminId);
+      await recoverResetSession(chatId, adminId);
       return;
     }
 
@@ -1102,6 +1104,14 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
     if (rendered) {
       setSession(adminId, view, null);
     }
+  }
+
+  async function recoverResetSession(chatId: number, adminId: string): Promise<void> {
+    await sendTelegramMessage(deps.telegramOptions, {
+      chatId,
+      text: "ℹ️ Session was reset. Opening the main menu."
+    });
+    await navigate(chatId, adminId, { type: "main" });
   }
 
   function setSession(

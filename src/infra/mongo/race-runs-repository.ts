@@ -14,6 +14,8 @@ export interface MongoRaceRunDocument {
   seed: string;
   mode?: "ranked" | "training";
   score: number;
+  timeSeconds?: number;
+  raceCoinsEarned?: number;
   status: "started" | "finished" | "abandoned";
   startedAt: Date;
   finishedAt?: Date;
@@ -75,6 +77,8 @@ export function mapRaceRunDocument(
     seed: document.seed,
     mode: document.mode ?? "ranked",
     score: document.score,
+    timeSeconds: document.timeSeconds,
+    raceCoinsEarned: document.raceCoinsEarned,
     status: document.status,
     startedAt: document.startedAt,
     finishedAt: document.finishedAt
