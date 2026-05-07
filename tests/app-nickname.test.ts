@@ -59,6 +59,27 @@ describe("PUT /v1/profile/nick", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ code: "INVALID_NICK" });
   });
+
+  test("allows browser preflight for the nick PUT endpoint", async () => {
+    const user: AppUser = buildUser();
+    const { app } = await buildNickTestApp([user]);
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/v1/profile/nick",
+      headers: {
+        origin: "https://thelightone.github.io",
+        "access-control-request-method": "PUT",
+        "access-control-request-headers": "authorization,content-type"
+      }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-methods"]).toContain("PUT");
+    expect(response.headers["access-control-allow-headers"]).toContain("authorization");
+    expect(response.headers["access-control-allow-headers"]).toContain("content-type");
+  });
 });
 
 async function buildNickTestApp(initialUsers: AppUser[]) {

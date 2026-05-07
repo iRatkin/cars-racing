@@ -116,7 +116,8 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
   });
 
   app.register(cors, {
-    origin: "*"
+    origin: "*",
+    methods: ["GET", "HEAD", "POST", "PUT"]
   });
 
   if (config) {
