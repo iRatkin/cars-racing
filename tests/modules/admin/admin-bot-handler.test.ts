@@ -123,6 +123,9 @@ function buildHandler() {
       async setInitialNick() {
         return null;
       },
+      async changeNickIfCurrentNick() {
+        return null;
+      },
       async changeNickWithRaceCoins() {
         return null;
       },

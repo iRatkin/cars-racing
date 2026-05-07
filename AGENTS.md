@@ -52,7 +52,8 @@ Nicknames:
 - Nick rules: 3-20 chars, Latin letters/digits/underscore only, case-insensitive uniqueness via `nickNormalized`.
 - `upsertTelegramUser` initializes `nick` from valid available Telegram `username`, then `firstName`, only when the user has no persisted nick.
 - Public responses always expose `nick`; if no persisted nick exists, API returns non-persisted fallback `p_<telegramUserId>`.
-- First manual nick set is free when no persisted `nick` exists. Changing an existing nick costs `NICK_CHANGE_PRICE_RC` race coins.
+- First manual nick set is free when no persisted `nick` exists. If the current persisted `nick` is the user's valid Telegram `username`, replacing it with a non-username nick is also free. Changing any other existing nick costs `NICK_CHANGE_PRICE_RC` race coins.
+- Users cannot change their public game nick to their own Telegram `username`; the endpoint returns `400 INVALID_NICK` for that target.
 - Admin bot screens continue to use Telegram profile fields, not public game nick.
 
 Battle seasons:

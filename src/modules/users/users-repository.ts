@@ -48,6 +48,12 @@ export interface UsersRepository {
     nick: string,
     nickNormalized: string
   ): Promise<AppUser | null>;
+  changeNickIfCurrentNick(
+    userId: string,
+    nick: string,
+    nickNormalized: string,
+    currentNickNormalized: string
+  ): Promise<AppUser | null>;
   changeNickWithRaceCoins(
     userId: string,
     nick: string,

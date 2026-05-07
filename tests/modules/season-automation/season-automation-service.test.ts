@@ -199,6 +199,9 @@ function buildDeps(input: {
       async setInitialNick() {
         return null;
       },
+      async changeNickIfCurrentNick() {
+        return null;
+      },
       async changeNickWithRaceCoins() {
         return null;
       },

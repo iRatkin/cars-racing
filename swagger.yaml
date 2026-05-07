@@ -118,6 +118,12 @@ paths:
       tags:
         - Profile
       summary: Set or change the authenticated user's public nickname
+      description: >
+        First manual nickname set is free when no nickname exists. If the
+        current nickname is the user's Telegram username, replacing it with a
+        different valid nickname is also free. Changing any other existing
+        nickname costs race coins. A user cannot change the public nickname to
+        their own Telegram username.
       operationId: updateProfileNick
       security:
         - bearerAuth: []
@@ -135,7 +141,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/UpdateNickResponse"
         "400":
-          description: Nick is missing or violates nickname rules.
+          description: Nick is missing, violates nickname rules, or equals the user's Telegram username.
           content:
             application/json:
               schema:

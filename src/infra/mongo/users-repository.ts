@@ -139,6 +139,26 @@ export class MongoUsersRepository implements UsersRepository {
     return document ? mapUserDocument(document) : null;
   }
 
+  async changeNickIfCurrentNick(
+    userId: string,
+    nick: string,
+    nickNormalized: string,
+    currentNickNormalized: string
+  ): Promise<AppUser | null> {
+    const document = await this.collection.findOneAndUpdate(
+      { userId, nickNormalized: currentNickNormalized },
+      {
+        $set: {
+          nick,
+          nickNormalized,
+          updatedAt: new Date()
+        }
+      },
+      { includeResultMetadata: false, returnDocument: "after" }
+    );
+    return document ? mapUserDocument(document) : null;
+  }
+
   async changeNickWithRaceCoins(
     userId: string,
     nick: string,
