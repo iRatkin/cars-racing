@@ -1,0 +1,115 @@
+import { describe, expect, test, vi } from "vitest";
+
+import { createWebhookHandler } from "../../../src/modules/telegram/webhook-handler.js";
+import type { PurchasesRepository } from "../../../src/modules/payments/purchases-repository.js";
+import type { TelegramFetch } from "../../../src/modules/telegram/invoice-link.js";
+import type { AppUser, UsersRepository } from "../../../src/modules/users/users-repository.js";
+
+describe("telegram webhook handler", () => {
+  test("sends the configured Mini App start message on /start", async () => {
+    const sentBodies: unknown[] = [];
+    const fetchImpl: TelegramFetch = vi.fn(async (_input, init) => {
+      sentBodies.push(JSON.parse(init.body));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, result: true })
+      };
+    });
+    const usersRepository = createUsersRepositoryStub();
+    const handler = createWebhookHandler({
+      purchasesRepository: createPurchasesRepositoryStub(),
+      usersRepository,
+      telegramOptions: { botToken: "123:test", fetchImpl },
+      miniAppUrl: "https://example.test/miniapp"
+    });
+
+    await handler({
+      update_id: 1,
+      message: {
+        message_id: 10,
+        from: {
+          id: 42,
+          first_name: "Ivan",
+          username: "ivan"
+        },
+        chat: { id: 42 },
+        text: "/start",
+        entities: [{ type: "bot_command", offset: 0, length: 6 }]
+      }
+    });
+
+    expect(usersRepository.upsertTelegramUser).toHaveBeenCalledWith({
+      telegramUserId: "42",
+      firstName: "Ivan",
+      lastName: undefined,
+      username: "ivan",
+      languageCode: undefined,
+      isPremium: undefined
+    });
+    expect(sentBodies).toEqual([
+      {
+        chat_id: 42,
+        text: "Жми «Играть» и начинай заезд 🏁",
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Play", web_app: { url: "https://example.test/miniapp" } }]
+          ]
+        }
+      }
+    ]);
+  });
+});
+
+function createUsersRepositoryStub(): UsersRepository {
+  const user: AppUser = {
+    userId: "usr_42",
+    telegramUserId: "42",
+    firstName: "Ivan",
+    username: "ivan",
+    ownedCarIds: [],
+    garageRevision: 0,
+    raceCoinsBalance: 0
+  };
+
+  return {
+    upsertTelegramUser: vi.fn(async () => user),
+    getUserById: vi.fn(async () => null),
+    getUserByNickNormalized: vi.fn(async () => null),
+    setInitialNick: vi.fn(async () => null),
+    setNick: vi.fn(async () => null),
+    addRaceCoins: vi.fn(async () => user),
+    spendRaceCoins: vi.fn(async () => null),
+    addOwnedCar: vi.fn(async () => null),
+    setUtmIfNotSet: vi.fn(async () => undefined),
+    getUserByTelegramId: vi.fn(async () => null),
+    getUserByUsername: vi.fn(async () => null),
+    setRaceCoinsBalance: vi.fn(async () => user),
+    getUserCount: vi.fn(async () => 0),
+    getTopUtmSources: vi.fn(async () => []),
+    getUtmSourcesSince: vi.fn(async () => []),
+    getAllUsers: vi.fn(async () => [])
+  };
+}
+
+function createPurchasesRepositoryStub(): PurchasesRepository {
+  return {
+    findActiveIntent: vi.fn(async () => null),
+    findByInvoicePayload: vi.fn(async () => null),
+    createIntent: vi.fn(async () => {
+      throw new Error("not implemented in test");
+    }),
+    setInvoiceUrl: vi.fn(async () => undefined),
+    updateStatus: vi.fn(async () => undefined),
+    markGranted: vi.fn(async () => undefined),
+    expireIntent: vi.fn(async () => undefined),
+    getStatsSummary: vi.fn(async () => ({
+      activeIntents: 0,
+      grantedTotal: 0,
+      grantedLast24h: 0,
+      coinsGrantedTotal: 0,
+      starsRevenueTotal: 0
+    }))
+  };
+}

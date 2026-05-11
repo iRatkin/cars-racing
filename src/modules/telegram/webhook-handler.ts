@@ -76,7 +76,7 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
     if (miniAppUrl) {
       await sendTelegramMessage(telegramOptions, {
         chatId,
-        text: "Welcome! Tap the button below to start racing.",
+        text: "Жми «Играть» и начинай заезд 🏁",
         replyMarkup: {
           inline_keyboard: [
             [{ text: "Play", web_app: { url: miniAppUrl } }]
