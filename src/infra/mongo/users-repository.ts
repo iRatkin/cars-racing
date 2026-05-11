@@ -139,48 +139,19 @@ export class MongoUsersRepository implements UsersRepository {
     return document ? mapUserDocument(document) : null;
   }
 
-  async changeNickIfCurrentNick(
+  async setNick(
     userId: string,
     nick: string,
-    nickNormalized: string,
-    currentNickNormalized: string
+    nickNormalized: string
   ): Promise<AppUser | null> {
     const document = await this.collection.findOneAndUpdate(
-      { userId, nickNormalized: currentNickNormalized },
+      { userId },
       {
         $set: {
           nick,
           nickNormalized,
           updatedAt: new Date()
         }
-      },
-      { includeResultMetadata: false, returnDocument: "after" }
-    );
-    return document ? mapUserDocument(document) : null;
-  }
-
-  async changeNickWithRaceCoins(
-    userId: string,
-    nick: string,
-    nickNormalized: string,
-    price: number
-  ): Promise<AppUser | null> {
-    if (!Number.isInteger(price) || price < 0) {
-      throw new Error("changeNickWithRaceCoins expects a non-negative integer price");
-    }
-    const document = await this.collection.findOneAndUpdate(
-      {
-        userId,
-        nickNormalized: { $exists: true },
-        raceCoinsBalance: { $gte: price }
-      },
-      {
-        $set: {
-          nick,
-          nickNormalized,
-          updatedAt: new Date()
-        },
-        $inc: { raceCoinsBalance: -price }
       },
       { includeResultMetadata: false, returnDocument: "after" }
     );

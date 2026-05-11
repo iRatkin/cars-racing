@@ -14,11 +14,11 @@ describe("PUT /v1/profile/nick", () => {
     apps.length = 0;
   });
 
-  test("lets a user replace their Telegram username nick for free", async () => {
+  test("lets a user change an existing nick for free without spending race coins", async () => {
     const user: AppUser = buildUser({
       username: "Pilot42",
-      nick: "Pilot42",
-      nickNormalized: "pilot42",
+      nick: "OldPilot",
+      nickNormalized: "oldpilot",
       raceCoinsBalance: 0
     });
     const { app, token } = await buildNickTestApp([user]);
@@ -35,16 +35,16 @@ describe("PUT /v1/profile/nick", () => {
     expect(response.json()).toEqual({
       nick: "CoolPilot",
       raceCoinsBalance: 0,
-      nickChangePrice: 100
+      nickChangePrice: 0
     });
   });
 
-  test("rejects changing a manual nick back to the Telegram username", async () => {
+  test("lets a user change their nick to the Telegram username", async () => {
     const user: AppUser = buildUser({
       username: "Pilot42",
       nick: "CoolPilot",
       nickNormalized: "coolpilot",
-      raceCoinsBalance: 100
+      raceCoinsBalance: 0
     });
     const { app, token } = await buildNickTestApp([user]);
     apps.push(app);
@@ -56,8 +56,12 @@ describe("PUT /v1/profile/nick", () => {
       payload: { nick: "Pilot42" }
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({ code: "INVALID_NICK" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      nick: "Pilot42",
+      raceCoinsBalance: 0,
+      nickChangePrice: 0
+    });
   });
 
   test("allows browser preflight for the nick PUT endpoint", async () => {
@@ -105,7 +109,6 @@ const testConfig: AppConfig = {
   mongoUri: "mongodb://localhost:27017/test",
   telegramWebhookSecret: "test-webhook-secret",
   miniAppUrl: undefined,
-  nickChangePriceRaceCoins: 100,
   env: "stage",
   port: 0
 };
@@ -169,34 +172,16 @@ class InMemoryUsersRepository implements UsersRepository {
     return this.updateNick(user, nick, nickNormalized);
   }
 
-  async changeNickIfCurrentNick(
+  async setNick(
     userId: string,
     nick: string,
-    nickNormalized: string,
-    currentNickNormalized: string
+    nickNormalized: string
   ): Promise<AppUser | null> {
     const user = this.users.get(userId);
-    if (!user || user.nickNormalized !== currentNickNormalized) {
+    if (!user) {
       return null;
     }
     return this.updateNick(user, nick, nickNormalized);
-  }
-
-  async changeNickWithRaceCoins(
-    userId: string,
-    nick: string,
-    nickNormalized: string,
-    price: number
-  ): Promise<AppUser | null> {
-    const user = this.users.get(userId);
-    if (!user || !user.nickNormalized || user.raceCoinsBalance < price) {
-      return null;
-    }
-    return this.updateNick(
-      { ...user, raceCoinsBalance: user.raceCoinsBalance - price },
-      nick,
-      nickNormalized
-    );
   }
 
   async addRaceCoins(userId: string, amount: number): Promise<AppUser> {

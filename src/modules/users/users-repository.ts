@@ -48,17 +48,10 @@ export interface UsersRepository {
     nick: string,
     nickNormalized: string
   ): Promise<AppUser | null>;
-  changeNickIfCurrentNick(
+  setNick(
     userId: string,
     nick: string,
-    nickNormalized: string,
-    currentNickNormalized: string
-  ): Promise<AppUser | null>;
-  changeNickWithRaceCoins(
-    userId: string,
-    nick: string,
-    nickNormalized: string,
-    price: number
+    nickNormalized: string
   ): Promise<AppUser | null>;
   addRaceCoins(userId: string, amount: number): Promise<AppUser>;
   spendRaceCoins(userId: string, amount: number): Promise<AppUser | null>;

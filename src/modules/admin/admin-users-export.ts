@@ -6,7 +6,7 @@ export const ADMIN_USERS_EXPORT_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /**
- * Builds an XLSX workbook with a single `userId` column, one row per user.
+ * Builds an XLSX workbook with a single user ID column, one row per user.
  * Returns the workbook as a byte array suitable for uploading via `sendTelegramDocument`.
  */
 export async function buildUsersExportWorkbook(users: AppUser[]): Promise<Uint8Array> {
@@ -15,9 +15,7 @@ export async function buildUsersExportWorkbook(users: AppUser[]): Promise<Uint8A
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet("Users");
-  sheet.columns = [{ header: "userId", key: "userId", width: 30 }];
-  sheet.getRow(1).font = { bold: true };
-  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  sheet.columns = [{ key: "userId", width: 30 }];
 
   for (const user of users) {
     sheet.addRow({ userId: user.userId });

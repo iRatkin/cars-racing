@@ -30,7 +30,7 @@ import {
   normalizeNick
 } from "./modules/users/nickname.js";
 import { ensureStarterCarState } from "./modules/users/starter-car.js";
-import type { AppUser, UsersRepository } from "./modules/users/users-repository.js";
+import type { UsersRepository } from "./modules/users/users-repository.js";
 import {
   canStartRace,
   computeSeasonStatus,
@@ -308,15 +308,9 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
 
       const nick = parsedBody.data.nick;
       const nickNormalized = normalizeNick(nick);
-      const nickChangePrice = appConfig.nickChangePriceRaceCoins;
-      const telegramUsernameNickNormalized = getTelegramUsernameNickNormalized(user.username);
 
       if (user.nickNormalized === nickNormalized) {
-        return reply.send(formatNickResponse(user, nickChangePrice));
-      }
-
-      if (telegramUsernameNickNormalized === nickNormalized) {
-        return reply.code(400).send({ code: "INVALID_NICK" });
+        return reply.send(formatNickResponse(user));
       }
 
       const existingNickUser = await userRepo.getUserByNickNormalized(nickNormalized);
@@ -324,28 +318,8 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
         return reply.code(409).send({ code: "NICK_ALREADY_TAKEN" });
       }
 
-      const hasPersistedNick = Boolean(user.nickNormalized);
-      const isCurrentNickTelegramUsername =
-        hasPersistedNick && user.nickNormalized === telegramUsernameNickNormalized;
       try {
-        let updatedUser: AppUser | null;
-        if (!hasPersistedNick) {
-          updatedUser = await userRepo.setInitialNick(user.userId, nick, nickNormalized);
-        } else if (isCurrentNickTelegramUsername) {
-          updatedUser = await userRepo.changeNickIfCurrentNick(
-            user.userId,
-            nick,
-            nickNormalized,
-            user.nickNormalized ?? ""
-          );
-        } else {
-          updatedUser = await userRepo.changeNickWithRaceCoins(
-            user.userId,
-            nick,
-            nickNormalized,
-            nickChangePrice
-          );
-        }
+        const updatedUser = await userRepo.setNick(user.userId, nick, nickNormalized);
 
         if (!updatedUser) {
           const latestUser = await userRepo.getUserById(user.userId);
@@ -353,15 +327,12 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
             return reply.code(404).send({ code: "USER_NOT_FOUND" });
           }
           if (latestUser.nickNormalized === nickNormalized) {
-            return reply.send(formatNickResponse(latestUser, nickChangePrice));
-          }
-          if (hasPersistedNick && !isCurrentNickTelegramUsername) {
-            return reply.code(422).send({ code: "INSUFFICIENT_BALANCE" });
+            return reply.send(formatNickResponse(latestUser));
           }
           return reply.code(409).send({ code: "NICK_ALREADY_TAKEN" });
         }
 
-        return reply.send(formatNickResponse(updatedUser, nickChangePrice));
+        return reply.send(formatNickResponse(updatedUser));
       } catch (error) {
         if (isDuplicateKeyError(error)) {
           return reply.code(409).send({ code: "NICK_ALREADY_TAKEN" });
@@ -1011,19 +982,11 @@ function formatCoinsIntentResponse(intent: {
 }
 
 function formatNickResponse(
-  user: { telegramUserId: string; nick?: string; raceCoinsBalance: number },
-  nickChangePrice: number
+  user: { telegramUserId: string; nick?: string; raceCoinsBalance: number }
 ) {
   return {
     nick: buildPublicNick(user),
     raceCoinsBalance: user.raceCoinsBalance ?? 0,
-    nickChangePrice
+    nickChangePrice: 0
   };
-}
-
-function getTelegramUsernameNickNormalized(username: string | undefined): string | null {
-  if (!username || !isValidNick(username)) {
-    return null;
-  }
-  return normalizeNick(username);
 }
