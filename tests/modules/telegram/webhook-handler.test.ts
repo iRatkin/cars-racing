@@ -75,41 +75,14 @@ function createUsersRepositoryStub(): UsersRepository {
 
   return {
     upsertTelegramUser: vi.fn(async () => user),
-    getUserById: vi.fn(async () => null),
-    getUserByNickNormalized: vi.fn(async () => null),
-    setInitialNick: vi.fn(async () => null),
-    setNick: vi.fn(async () => null),
-    addRaceCoins: vi.fn(async () => user),
-    spendRaceCoins: vi.fn(async () => null),
-    addOwnedCar: vi.fn(async () => null),
-    setUtmIfNotSet: vi.fn(async () => undefined),
-    getUserByTelegramId: vi.fn(async () => null),
-    getUserByUsername: vi.fn(async () => null),
-    setRaceCoinsBalance: vi.fn(async () => user),
-    getUserCount: vi.fn(async () => 0),
-    getTopUtmSources: vi.fn(async () => []),
-    getUtmSourcesSince: vi.fn(async () => []),
-    getAllUsers: vi.fn(async () => [])
-  };
+    setUtmIfNotSet: vi.fn(async () => undefined)
+  } as unknown as UsersRepository;
 }
 
 function createPurchasesRepositoryStub(): PurchasesRepository {
   return {
-    findActiveIntent: vi.fn(async () => null),
     findByInvoicePayload: vi.fn(async () => null),
-    createIntent: vi.fn(async () => {
-      throw new Error("not implemented in test");
-    }),
-    setInvoiceUrl: vi.fn(async () => undefined),
     updateStatus: vi.fn(async () => undefined),
-    markGranted: vi.fn(async () => undefined),
-    expireIntent: vi.fn(async () => undefined),
-    getStatsSummary: vi.fn(async () => ({
-      activeIntents: 0,
-      grantedTotal: 0,
-      grantedLast24h: 0,
-      coinsGrantedTotal: 0,
-      starsRevenueTotal: 0
-    }))
-  };
+    markGranted: vi.fn(async () => undefined)
+  } as unknown as PurchasesRepository;
 }
