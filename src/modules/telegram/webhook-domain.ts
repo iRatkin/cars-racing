@@ -54,6 +54,20 @@ export type TelegramBotCommandUpdate = {
   };
 };
 
+export type TelegramCallbackQueryUpdate = {
+  update_id: number;
+  callback_query: {
+    id: string;
+    from: TelegramUserIdentity;
+    data?: string;
+    message?: {
+      chat?: { id: number | string; [key: string]: unknown };
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+};
+
 export type SupportedTelegramWebhookUpdate =
   | TelegramPreCheckoutWebhookUpdate
   | TelegramSuccessfulPaymentWebhookUpdate;
@@ -162,6 +176,18 @@ export function isTelegramBotCommandUpdate(
 
   const text = value.message.text as string;
   return text === command || text.startsWith(`${command}@`);
+}
+
+export function isTelegramCallbackQueryUpdate(
+  value: unknown
+): value is TelegramCallbackQueryUpdate {
+  return (
+    isObject(value) &&
+    typeof value.update_id === "number" &&
+    isObject(value.callback_query) &&
+    typeof value.callback_query.id === "string" &&
+    isTelegramUserIdentity(value.callback_query.from)
+  );
 }
 
 export function isSupportedTelegramWebhookUpdate(

@@ -1,18 +1,25 @@
 import type { PurchasesRepository } from "../payments/purchases-repository.js";
 import type { UsersRepository } from "../users/users-repository.js";
 import type { TelegramInvoiceLinkClientOptions } from "./invoice-link.js";
-import { answerPreCheckoutQuery, sendTelegramMessage } from "./invoice-link.js";
+import { answerCallbackQuery, answerPreCheckoutQuery, sendTelegramMessage } from "./invoice-link.js";
 import type { UserUtmData } from "../users/users-repository.js";
 import {
   extractStartCommandPayload,
   isTelegramBotCommandUpdate,
+  isTelegramCallbackQueryUpdate,
   isTelegramPreCheckoutWebhookUpdate,
   isTelegramSuccessfulPaymentWebhookUpdate,
   normalizeTelegramUserId,
   type TelegramBotCommandUpdate,
+  type TelegramCallbackQueryUpdate,
   type TelegramPreCheckoutWebhookUpdate,
   type TelegramSuccessfulPaymentWebhookUpdate
 } from "./webhook-domain.js";
+
+const GAME_LAUNCH_HINT_CALLBACK_DATA = "game_launch_hint";
+const GAME_LAUNCH_HINT_BUTTON_TEXT = "↙️ нажми на кнопку, чтобы запустит игру";
+const GAME_LAUNCH_HINT_RESPONSE =
+  'Игра запускается при нажатии кнопки "Play" в левом нижнем углу экрана';
 
 export interface WebhookHandlerDependencies {
   purchasesRepository: PurchasesRepository;
@@ -34,6 +41,11 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
   return async function handleTelegramWebhook(update: unknown): Promise<void> {
     if (isTelegramBotCommandUpdate(update, "/start")) {
       await handleStartCommand(update);
+      return;
+    }
+
+    if (isTelegramCallbackQueryUpdate(update)) {
+      await handleCallbackQuery(update);
       return;
     }
 
@@ -79,7 +91,7 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
         text: "Жми «Играть» и начинай заезд 🏁",
         replyMarkup: {
           inline_keyboard: [
-            [{ text: "Play", web_app: { url: miniAppUrl } }]
+            [{ text: GAME_LAUNCH_HINT_BUTTON_TEXT, callback_data: GAME_LAUNCH_HINT_CALLBACK_DATA }]
           ]
         }
       });
@@ -91,6 +103,27 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
     }
 
     logger?.info({ chatId, telegramUserId }, "/start command handled");
+  }
+
+  async function handleCallbackQuery(update: TelegramCallbackQueryUpdate): Promise<void> {
+    const query = update.callback_query;
+    if (query.data !== GAME_LAUNCH_HINT_CALLBACK_DATA) {
+      logger?.info({ callbackData: query.data }, "ignoring unsupported callback query");
+      return;
+    }
+
+    await answerCallbackQuery(telegramOptions, query.id);
+
+    const chatId = query.message?.chat?.id;
+    if (chatId === undefined) {
+      logger?.warn({ callbackQueryId: query.id }, "launch hint callback missing chat id");
+      return;
+    }
+
+    await sendTelegramMessage(telegramOptions, {
+      chatId,
+      text: GAME_LAUNCH_HINT_RESPONSE
+    });
   }
 
   async function handlePreCheckoutQuery(update: TelegramPreCheckoutWebhookUpdate): Promise<void> {

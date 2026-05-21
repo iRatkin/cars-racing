@@ -6,7 +6,7 @@ import type { TelegramFetch } from "../../../src/modules/telegram/invoice-link.j
 import type { AppUser, UsersRepository } from "../../../src/modules/users/users-repository.js";
 
 describe("telegram webhook handler", () => {
-  test("sends the configured Mini App start message on /start", async () => {
+  test("sends the Mini App launch hint on /start", async () => {
     const sentBodies: unknown[] = [];
     const fetchImpl: TelegramFetch = vi.fn(async (_input, init) => {
       sentBodies.push(JSON.parse(init.body));
@@ -54,8 +54,56 @@ describe("telegram webhook handler", () => {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Play", web_app: { url: "https://example.test/miniapp" } }]
+            [{ text: "↙️ нажми на кнопку, чтобы запустит игру", callback_data: "game_launch_hint" }]
           ]
+        }
+      }
+    ]);
+  });
+
+  test("sends an explanation when the launch hint button is pressed", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const fetchImpl: TelegramFetch = vi.fn(async (url, init) => {
+      calls.push({ url, body: JSON.parse(init.body) });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, result: true })
+      };
+    });
+    const handler = createWebhookHandler({
+      purchasesRepository: createPurchasesRepositoryStub(),
+      usersRepository: createUsersRepositoryStub(),
+      telegramOptions: { botToken: "123:test", fetchImpl },
+      miniAppUrl: "https://example.test/miniapp"
+    });
+
+    await handler({
+      update_id: 2,
+      callback_query: {
+        id: "cb_1",
+        from: { id: 42 },
+        message: {
+          message_id: 10,
+          chat: { id: 42 }
+        },
+        data: "game_launch_hint"
+      }
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "https://api.telegram.org/bot123:test/answerCallbackQuery",
+        body: {
+          callback_query_id: "cb_1"
+        }
+      },
+      {
+        url: "https://api.telegram.org/bot123:test/sendMessage",
+        body: {
+          chat_id: 42,
+          text: 'Игра запускается при нажатии кнопки "Play" в левом нижнем углу экрана',
+          parse_mode: "HTML"
         }
       }
     ]);
