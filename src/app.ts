@@ -3,6 +3,8 @@ import jwt from "@fastify/jwt";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { MongoClient } from "mongodb";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { z } from "zod";
 
 import type { AppConfig } from "./config/config.js";
@@ -95,6 +97,20 @@ const trainingRaceFinishBodySchema = raceFinishBodySchema.extend({
   raceCoinsEarned: z.number().int().min(1).max(20)
 });
 
+const miniAppAssetRoot = join(process.cwd(), "public", "miniapp");
+const miniAppAssets = {
+  "index.html": {
+    filePath: join(miniAppAssetRoot, "index.html"),
+    contentType: "text/html; charset=utf-8"
+  },
+  "telegram-bridge.js": {
+    filePath: join(miniAppAssetRoot, "telegram-bridge.js"),
+    contentType: "text/javascript; charset=utf-8"
+  }
+} as const;
+
+type MiniAppAssetName = keyof typeof miniAppAssets;
+
 export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
   const {
     config,
@@ -127,6 +143,17 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
   }
 
   app.get("/health", async () => ({ ok: true }));
+
+  app.get("/miniapp", async (_request, reply) => reply.redirect("/miniapp/index.html"));
+  app.get("/miniapp/", async (_request, reply) => reply.redirect("/miniapp/index.html"));
+  app.get<{ Params: { assetName: string } }>("/miniapp/:assetName", async (request, reply) => {
+    const assetName = request.params.assetName;
+    if (!isMiniAppAssetName(assetName)) {
+      return reply.code(404).send({ code: "MINIAPP_ASSET_NOT_FOUND" });
+    }
+
+    return sendMiniAppAsset(reply, assetName);
+  });
 
   if (config && handleTelegramWebhook) {
     app.post("/v1/telegram/webhook", async (request, reply) => {
@@ -914,6 +941,23 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
   }
 
   return app;
+}
+
+function isMiniAppAssetName(value: string): value is MiniAppAssetName {
+  return Object.hasOwn(miniAppAssets, value);
+}
+
+async function sendMiniAppAsset(
+  reply: FastifyReply,
+  assetName: MiniAppAssetName
+): Promise<FastifyReply> {
+  try {
+    const asset = miniAppAssets[assetName];
+    const body = await readFile(asset.filePath);
+    return reply.type(asset.contentType).send(body);
+  } catch {
+    return reply.code(404).send({ code: "MINIAPP_ASSET_NOT_FOUND" });
+  }
 }
 
 function parseLeaderboardLimit(request: FastifyRequest): number {
