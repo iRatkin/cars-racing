@@ -17,9 +17,8 @@ import {
 } from "./webhook-domain.js";
 
 const GAME_LAUNCH_HINT_CALLBACK_DATA = "game_launch_hint";
-const GAME_LAUNCH_HINT_BUTTON_TEXT = "↙️ нажми на кнопку, чтобы запустит игру";
 const GAME_LAUNCH_HINT_RESPONSE =
-  'Игра запускается при нажатии кнопки "Play" в левом нижнем углу экрана';
+  'Игра запускается при нажатии кнопки "Start" в левом нижнем углу экрана';
 
 export interface WebhookHandlerDependencies {
   purchasesRepository: PurchasesRepository;
@@ -88,12 +87,7 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
     if (miniAppUrl) {
       await sendTelegramMessage(telegramOptions, {
         chatId,
-        text: "↙️ Жми «Играть» и начинай заезд 🏁",
-        replyMarkup: {
-          inline_keyboard: [
-            [{ text: GAME_LAUNCH_HINT_BUTTON_TEXT, callback_data: GAME_LAUNCH_HINT_CALLBACK_DATA }]
-          ]
-        }
+        text: "↙️ Нажми Start, чтобы запустить игру и начать заезд 🏁"
       });
     } else {
       await sendTelegramMessage(telegramOptions, {
