@@ -63,7 +63,7 @@ describe("season automation service", () => {
     expect(deps.playerMessages.length).toBe(3);
   });
 
-  test("sends admin finished top-3 winners after season end", async () => {
+  test("sends finished top-3 winners to admins and ordinary users after season end", async () => {
     const deps = buildDeps({
       seasons: [season("sea_done", "2026-04-22T17:00:00.000Z", "2026-04-29T17:00:00.000Z")],
       users: [
@@ -122,22 +122,64 @@ describe("season automation service", () => {
       "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion, RunnerUp, Bronze"
     );
     expect(deps.adminMessages[0]?.text).not.toContain("Fourth");
+    const finalMessage =
+      "🏆 Турнир завершён!\n" +
+      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion, RunnerUp, Bronze";
+    expect(deps.playerMessages.filter((message) => message.text === finalMessage)).toEqual([
+      {
+        chatId: "111",
+        text: finalMessage
+      },
+      {
+        chatId: "222",
+        text: finalMessage
+      },
+      {
+        chatId: "333",
+        text: finalMessage
+      },
+      {
+        chatId: "444",
+        text: finalMessage
+      }
+    ]);
     expect(deps.leaderboardLimits).toEqual([3]);
   });
 
-  test("does not claim admin finished event when admin bot is not configured", async () => {
+  test("sends finished top-3 winners to ordinary users when admin bot is not configured", async () => {
     const deps = buildDeps({
       adminTelegramIds: [],
-      seasons: [season("sea_done", "2026-04-22T17:00:00.000Z", "2026-04-29T17:00:00.000Z")]
+      seasons: [season("sea_done", "2026-04-22T17:00:00.000Z", "2026-04-29T17:00:00.000Z")],
+      users: [user("usr_1", "111", "Champion")],
+      leaderboard: [
+        {
+          entryId: "entry_1",
+          seasonId: "sea_done",
+          userId: "usr_1",
+          bestScore: 2000,
+          totalRaces: 4,
+          entryFeeSnapshot: 25,
+          createdAt: new Date("2026-04-22T18:00:00.000Z")
+        }
+      ]
     });
     const service = createSeasonAutomationService(deps);
 
     await service.runOnce(new Date("2026-04-29T17:01:00.000Z"));
 
-    expect(deps.claimedEventKeys).not.toContain(
+    expect(deps.claimedEventKeys).toContain(
       "season:sea_done:season_finished_admin_top10:2026-04-29T17:00:00.000Z"
     );
     expect(deps.adminMessages).toEqual([]);
+    const finalMessage =
+      "🏆 Турнир завершён!\n" +
+      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion";
+    expect(deps.playerMessages.filter((message) => message.text === finalMessage)).toEqual([
+      {
+        chatId: "111",
+        text: finalMessage
+      }
+    ]);
   });
 });
 

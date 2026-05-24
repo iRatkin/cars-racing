@@ -133,17 +133,6 @@ async function processDueSeasonEvents(
   for (const season of seasons) {
     const dueEvents = getDueSeasonNotificationEvents(season, referenceNow);
     for (const event of dueEvents) {
-      if (
-        event.eventType === "season_finished_admin_top10" &&
-        deps.adminTelegramIds.length === 0
-      ) {
-        deps.logger?.warn(
-          { seasonId: season.seasonId },
-          "season automation: admin summary skipped because admin bot is not configured"
-        );
-        continue;
-      }
-
       const eventKey = buildSeasonAutomationEventKey({
         seasonId: season.seasonId,
         eventType: event.eventType,
@@ -161,7 +150,7 @@ async function processDueSeasonEvents(
 
       try {
         if (event.eventType === "season_finished_admin_top10") {
-          await sendAdminWinnersTop3(deps, season);
+          await sendFinishedWinnersTop3(deps, season, event.eventType);
         } else {
           await sendPlayerNotification(deps, event.eventType);
         }
@@ -214,14 +203,15 @@ async function sendPlayerNotification(
   );
 }
 
-async function sendAdminWinnersTop3(
+async function sendFinishedWinnersTop3(
   deps: CreateSeasonAutomationServiceDeps,
   season: {
     seasonId: string;
     title: string;
     mapId: string;
     endsAt: Date;
-  }
+  },
+  eventType: SeasonAutomationEventType
 ): Promise<void> {
   const [entries, totalParticipants] = await Promise.all([
     deps.seasonEntriesRepository.getLeaderboard(season.seasonId, 3),
@@ -234,9 +224,46 @@ async function sendAdminWinnersTop3(
     entries: topEntries
   });
 
+  await sendPlayerBroadcast(deps, eventType, text);
+
   for (const chatId of deps.adminTelegramIds) {
     await deps.telegram.sendAdminMessage({ chatId, text });
   }
+}
+
+async function sendPlayerBroadcast(
+  deps: CreateSeasonAutomationServiceDeps,
+  eventType: SeasonAutomationEventType,
+  text: string
+): Promise<void> {
+  const users = await deps.usersRepository.getAllUsers();
+  let sent = 0;
+  let failed = 0;
+
+  for (const user of users) {
+    try {
+      await deps.telegram.sendPlayerMessage({
+        chatId: user.telegramUserId,
+        text
+      });
+      sent += 1;
+    } catch (error) {
+      failed += 1;
+      deps.logger?.warn(
+        {
+          err: errorToString(error),
+          userId: user.userId,
+          telegramUserId: user.telegramUserId
+        },
+        "season automation: player broadcast failed"
+      );
+    }
+  }
+
+  deps.logger?.info(
+    { eventType, sent, failed },
+    "season automation: player broadcast finished"
+  );
 }
 
 async function buildAdminTopEntries(
