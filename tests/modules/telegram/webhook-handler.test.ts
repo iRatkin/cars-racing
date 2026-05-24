@@ -50,7 +50,7 @@ describe("telegram webhook handler", () => {
     expect(sentBodies).toEqual([
       {
         chat_id: 42,
-        text: "↙️ Нажми Start, чтобы запустить игру и начать заезд 🏁",
+        text: "↙️ Нажми Play, чтобы запустить игру и начать заезд 🏁",
         parse_mode: "HTML"
       }
     ]);
@@ -97,7 +97,7 @@ describe("telegram webhook handler", () => {
         url: "https://api.telegram.org/bot123:test/sendMessage",
         body: {
           chat_id: 42,
-          text: 'Игра запускается при нажатии кнопки "Start" в левом нижнем углу экрана',
+          text: 'Игра запускается при нажатии кнопки "Play" в левом нижнем углу экрана',
           parse_mode: "HTML"
         }
       }

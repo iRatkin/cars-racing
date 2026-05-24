@@ -18,7 +18,7 @@ import {
 
 const GAME_LAUNCH_HINT_CALLBACK_DATA = "game_launch_hint";
 const GAME_LAUNCH_HINT_RESPONSE =
-  'Игра запускается при нажатии кнопки "Start" в левом нижнем углу экрана';
+  'Игра запускается при нажатии кнопки "Play" в левом нижнем углу экрана';
 
 export interface WebhookHandlerDependencies {
   purchasesRepository: PurchasesRepository;
@@ -87,7 +87,7 @@ export function createWebhookHandler(deps: WebhookHandlerDependencies) {
     if (miniAppUrl) {
       await sendTelegramMessage(telegramOptions, {
         chatId,
-        text: "↙️ Нажми Start, чтобы запустить игру и начать заезд 🏁"
+        text: "↙️ Нажми Play, чтобы запустить игру и начать заезд 🏁"
       });
     } else {
       await sendTelegramMessage(telegramOptions, {
