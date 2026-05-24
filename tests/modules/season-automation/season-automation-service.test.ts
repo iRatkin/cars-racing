@@ -50,19 +50,28 @@ describe("season automation service", () => {
 
     expect(deps.playerMessages).toContainEqual({
       chatId: "111",
-      text: "Дружище Racer_1 - новый сезон начался, торопись дрифтить!"
+      text:
+        "🏁🔥 Турнир начался!\n" +
+        "Заезжай в RACEDRIFT, набирай очки и сражайся за реальный приз 🏆"
     });
     expect(deps.playerMessages).toContainEqual({
       chatId: "111",
-      text: "Дружище Racer_1 - поторопись, сезон заканчивается!"
+      text:
+        "⏳🏎️ Турнир скоро закончится!\n" +
+        "У тебя ещё есть шанс улучшить результат и побороться за главный приз 🏁"
     });
     expect(deps.playerMessages.length).toBe(3);
   });
 
-  test("sends admin finished top-10 after season end", async () => {
+  test("sends admin finished top-3 winners after season end", async () => {
     const deps = buildDeps({
       seasons: [season("sea_done", "2026-04-22T17:00:00.000Z", "2026-04-29T17:00:00.000Z")],
-      users: [user("usr_1", "111", "Champion")],
+      users: [
+        user("usr_1", "111", "Champion"),
+        user("usr_2", "222", "RunnerUp"),
+        user("usr_3", "333", "Bronze"),
+        user("usr_4", "444", "Fourth")
+      ],
       leaderboard: [
         {
           entryId: "entry_1",
@@ -72,6 +81,33 @@ describe("season automation service", () => {
           totalRaces: 4,
           entryFeeSnapshot: 25,
           createdAt: new Date("2026-04-22T18:00:00.000Z")
+        },
+        {
+          entryId: "entry_2",
+          seasonId: "sea_done",
+          userId: "usr_2",
+          bestScore: 1900,
+          totalRaces: 4,
+          entryFeeSnapshot: 25,
+          createdAt: new Date("2026-04-22T18:01:00.000Z")
+        },
+        {
+          entryId: "entry_3",
+          seasonId: "sea_done",
+          userId: "usr_3",
+          bestScore: 1800,
+          totalRaces: 4,
+          entryFeeSnapshot: 25,
+          createdAt: new Date("2026-04-22T18:02:00.000Z")
+        },
+        {
+          entryId: "entry_4",
+          seasonId: "sea_done",
+          userId: "usr_4",
+          bestScore: 1700,
+          totalRaces: 4,
+          entryFeeSnapshot: 25,
+          createdAt: new Date("2026-04-22T18:03:00.000Z")
         }
       ]
     });
@@ -81,8 +117,12 @@ describe("season automation service", () => {
 
     expect(deps.adminMessages).toHaveLength(1);
     expect(deps.adminMessages[0]?.chatId).toBe("999");
-    expect(deps.adminMessages[0]?.text).toContain("Champion");
-    expect(deps.adminMessages[0]?.text).toContain("2000");
+    expect(deps.adminMessages[0]?.text).toBe(
+      "🏆 Турнир завершён!\n" +
+      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion, RunnerUp, Bronze"
+    );
+    expect(deps.adminMessages[0]?.text).not.toContain("Fourth");
+    expect(deps.leaderboardLimits).toEqual([3]);
   });
 
   test("does not claim admin finished event when admin bot is not configured", async () => {
@@ -115,11 +155,13 @@ function buildDeps(input: {
   const createdSeasons: CreateSeasonInput[] = [];
   const playerMessages: Array<{ chatId: string; text: string }> = [];
   const adminMessages: Array<{ chatId: string; text: string }> = [];
+  const leaderboardLimits: number[] = [];
 
   return {
     createdSeasons,
     playerMessages,
     adminMessages,
+    leaderboardLimits,
     claimedEventKeys,
     seasonsRepository: {
       async getSeasonById(seasonId: string, referenceNow: Date) {
@@ -177,6 +219,7 @@ function buildDeps(input: {
       async updateBestScore() {},
       async incrementTotalRaces() {},
       async getLeaderboard(seasonId: string, limit: number) {
+        leaderboardLimits.push(limit);
         return leaderboard.filter((entry) => entry.seasonId === seasonId).slice(0, limit);
       },
       async getEntryRank() {

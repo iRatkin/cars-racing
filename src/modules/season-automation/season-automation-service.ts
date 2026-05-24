@@ -161,7 +161,7 @@ async function processDueSeasonEvents(
 
       try {
         if (event.eventType === "season_finished_admin_top10") {
-          await sendAdminTop10(deps, season);
+          await sendAdminWinnersTop3(deps, season);
         } else {
           await sendPlayerNotification(deps, event.eventType);
         }
@@ -214,7 +214,7 @@ async function sendPlayerNotification(
   );
 }
 
-async function sendAdminTop10(
+async function sendAdminWinnersTop3(
   deps: CreateSeasonAutomationServiceDeps,
   season: {
     seasonId: string;
@@ -224,7 +224,7 @@ async function sendAdminTop10(
   }
 ): Promise<void> {
   const [entries, totalParticipants] = await Promise.all([
-    deps.seasonEntriesRepository.getLeaderboard(season.seasonId, 10),
+    deps.seasonEntriesRepository.getLeaderboard(season.seasonId, 3),
     deps.seasonEntriesRepository.countEntries(season.seasonId)
   ]);
   const topEntries = await buildAdminTopEntries(deps, entries);

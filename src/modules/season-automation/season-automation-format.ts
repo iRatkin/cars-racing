@@ -26,36 +26,31 @@ export interface AdminSeasonFinishedTopMessageInput {
 export function formatPlayerSeasonNotification(
   input: PlayerSeasonNotificationInput
 ): string {
-  const nick = escapeHtml(input.nick);
   if (input.eventType === "season_started") {
-    return `Дружище ${nick} - новый сезон начался, торопись дрифтить!`;
+    return (
+      "🏁🔥 Турнир начался!\n" +
+      "Заезжай в RACEDRIFT, набирай очки и сражайся за реальный приз 🏆"
+    );
   }
-  return `Дружище ${nick} - поторопись, сезон заканчивается!`;
+  return (
+    "⏳🏎️ Турнир скоро закончится!\n" +
+    "У тебя ещё есть шанс улучшить результат и побороться за главный приз 🏁"
+  );
 }
 
 export function formatAdminSeasonFinishedTopMessage(
   input: AdminSeasonFinishedTopMessageInput
 ): string {
-  const rows =
+  const winnersList =
     input.entries.length === 0
-      ? "No ranked results."
+      ? "победителей нет"
       : input.entries
-          .map(
-            (entry) =>
-              `${entry.rank}. ${escapeHtml(entry.nick)} — <b>${entry.bestScore}</b> pts, races: ${entry.totalRaces}`
-          )
-          .join("\n");
+          .slice(0, 3)
+          .map((entry) => escapeHtml(entry.nick))
+          .join(", ");
 
   return (
-    `🏁 <b>Season Finished</b>\n\n` +
-    `Title: ${escapeHtml(input.season.title)}\n` +
-    `Map: <code>${escapeHtml(input.season.mapId)}</code>\n` +
-    `Ended: ${formatDateUtc(input.season.endsAt)}\n` +
-    `Participants: <b>${input.totalParticipants}</b>\n\n` +
-    `<b>Top 10</b>\n${rows}`
+    "🏆 Турнир завершён!\n" +
+    `Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: ${winnersList}`
   );
-}
-
-function formatDateUtc(date: Date): string {
-  return `${date.toISOString().replace("T", " ").slice(0, 16)} UTC`;
 }

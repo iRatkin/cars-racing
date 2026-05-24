@@ -50,7 +50,7 @@ describe("telegram webhook handler", () => {
     expect(sentBodies).toEqual([
       {
         chat_id: 42,
-        text: "Подсказка для запуска игры:",
+        text: "↙️ Жми «Играть» и начинай заезд 🏁",
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
