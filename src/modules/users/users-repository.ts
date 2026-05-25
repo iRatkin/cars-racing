@@ -39,6 +39,20 @@ export interface UtmSourceCount {
   count: number;
 }
 
+export interface UtmSourceDetailsQuery {
+  utmSource: string;
+  todayStart: Date;
+  tomorrowStart: Date;
+  yesterdayStart: Date;
+}
+
+export interface UserUtmSourceDetails {
+  utmSource: string;
+  todayCount: number;
+  yesterdayCount: number;
+  totalCount: number;
+}
+
 export interface UsersRepository {
   upsertTelegramUser(input: UpsertTelegramUserInput): Promise<AppUser>;
   getUserById(userId: string): Promise<AppUser | null>;
@@ -62,6 +76,8 @@ export interface UsersRepository {
   setRaceCoinsBalance(userId: string, amount: number): Promise<AppUser>;
   getUserCount(): Promise<number>;
   getTopUtmSources(limit: number): Promise<UtmSourceCount[]>;
+  getAllUtmSources(): Promise<UtmSourceCount[]>;
   getUtmSourcesSince(since: Date): Promise<UtmSourceCount[]>;
+  getUtmSourceDetails(query: UtmSourceDetailsQuery): Promise<UserUtmSourceDetails>;
   getAllUsers(): Promise<AppUser[]>;
 }

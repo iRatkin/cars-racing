@@ -3,8 +3,10 @@ import type { Document, WithId } from "mongodb";
 import type {
   AppUser,
   UpsertTelegramUserInput,
+  UserUtmSourceDetails,
   UserUtmData,
   UsersRepository,
+  UtmSourceDetailsQuery,
   UtmSourceCount
 } from "../../modules/users/users-repository.js";
 import {
@@ -270,24 +272,39 @@ export class MongoUsersRepository implements UsersRepository {
     const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
     const rows = await this.collection
       .aggregate<UtmAggregateRow>([
-        {
-          $group: {
-            _id: { $ifNull: ["$utmSource", "direct"] },
-            count: { $sum: 1 }
-          }
-        },
-        {
-          $project: {
-            _id: 0,
-            utmSource: "$_id",
-            count: 1
-          }
-        },
-        { $sort: { count: -1 } },
+        ...buildUtmSourcesAggregationPipeline(),
         { $limit: safeLimit }
       ])
       .toArray();
     return rows.map((row) => ({ utmSource: row.utmSource, count: row.count }));
+  }
+
+  async getAllUtmSources(): Promise<UtmSourceCount[]> {
+    const rows = await this.collection
+      .aggregate<UtmAggregateRow>(buildUtmSourcesAggregationPipeline())
+      .toArray();
+    return rows.map((row) => ({ utmSource: row.utmSource, count: row.count }));
+  }
+
+  async getUtmSourceDetails(query: UtmSourceDetailsQuery): Promise<UserUtmSourceDetails> {
+    const baseFilter = buildUtmSourceFilter(query.utmSource);
+    const [todayCount, yesterdayCount, totalCount] = await Promise.all([
+      this.collection.countDocuments({
+        ...baseFilter,
+        createdAt: { $gte: query.todayStart, $lt: query.tomorrowStart }
+      }),
+      this.collection.countDocuments({
+        ...baseFilter,
+        createdAt: { $gte: query.yesterdayStart, $lt: query.todayStart }
+      }),
+      this.collection.countDocuments(baseFilter)
+    ]);
+    return {
+      utmSource: query.utmSource,
+      todayCount,
+      yesterdayCount,
+      totalCount
+    };
   }
 
   private async setAutomaticNickIfAvailable(
@@ -315,6 +332,38 @@ export class MongoUsersRepository implements UsersRepository {
 
     return user;
   }
+}
+
+function buildUtmSourcesAggregationPipeline(): Document[] {
+  return [
+    {
+      $group: {
+        _id: { $ifNull: ["$utmSource", "direct"] },
+        count: { $sum: 1 }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        utmSource: "$_id",
+        count: 1
+      }
+    },
+    { $sort: { count: -1, utmSource: 1 } }
+  ];
+}
+
+function buildUtmSourceFilter(utmSource: string): Record<string, unknown> {
+  if (utmSource === "direct") {
+    return {
+      $or: [
+        { utmSource: { $exists: false } },
+        { utmSource: null },
+        { utmSource: "direct" }
+      ]
+    };
+  }
+  return { utmSource };
 }
 
 export function buildUserId(telegramUserId: string): string {

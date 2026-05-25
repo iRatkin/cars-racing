@@ -1,4 +1,8 @@
-import type { AppUser, UtmSourceCount } from "../users/users-repository.js";
+import type {
+  AppUser,
+  UserUtmSourceDetails,
+  UtmSourceCount
+} from "../users/users-repository.js";
 import type { CatalogCar } from "../cars-catalog/cars-catalog-repository.js";
 import type { Season } from "../seasons/seasons-domain.js";
 import type { PurchaseStatsSummary } from "../payments/purchases-repository.js";
@@ -133,6 +137,15 @@ export function formatTodayUtmReport(
     `<i>Since ${dateLabel} 00:00 UTC</i>\n\n` +
     `Total: <b>${total}</b>\n\n` +
     `${lines}`
+  );
+}
+
+export function formatUtmSourceDetails(details: UserUtmSourceDetails): string {
+  return (
+    `📊 <b>UTM source: ${escapeHtml(details.utmSource)}</b>\n\n` +
+    `Сегодня: <b>${details.todayCount}</b>\n` +
+    `Вчера: <b>${details.yesterdayCount}</b>\n` +
+    `Всего: <b>${details.totalCount}</b>`
   );
 }
 

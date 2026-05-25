@@ -40,7 +40,8 @@ import {
   buildCarDetailReplyKeyboard,
   buildConfirmCreateSeasonReplyKeyboard,
   buildConfirmFinishSeasonReplyKeyboard,
-  buildSeasonDetailReplyKeyboard
+  buildSeasonDetailReplyKeyboard,
+  buildUtmSourcesInlineList
 } from "./admin-keyboards.js";
 import { renderAdminView } from "./admin-view-renderer.js";
 import {
@@ -259,6 +260,10 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
       }
       if (text === ADMIN_BTN.USERS_TODAY_UTM) {
         await showTodayUtmReport(chatId);
+        return;
+      }
+      if (text === ADMIN_BTN.USERS_UTM_DETAILS) {
+        await showUtmSourceButtons(chatId);
         return;
       }
       if (text === ADMIN_BTN.BACK) {
@@ -1000,6 +1005,27 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
       await sendTelegramMessage(deps.telegramOptions, {
         chatId,
         text: `❌ Failed to load today's UTM report: ${escapeHtml(message)}`
+      });
+    }
+  }
+
+  async function showUtmSourceButtons(chatId: number): Promise<void> {
+    try {
+      const sources = await deps.usersRepository.getAllUtmSources();
+      const inline = buildUtmSourcesInlineList(sources);
+      await sendTelegramMessage(deps.telegramOptions, {
+        chatId,
+        text: inline
+          ? "📊 <b>UTM details</b>\n\nChoose a source:"
+          : "📊 <b>UTM details</b>\n\n(no data)",
+        replyMarkup: inline ?? undefined
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.logger?.warn({ err: message }, "admin: utm source buttons failed");
+      await sendTelegramMessage(deps.telegramOptions, {
+        chatId,
+        text: `❌ Failed to load UTM sources: ${escapeHtml(message)}`
       });
     }
   }

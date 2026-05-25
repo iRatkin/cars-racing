@@ -320,8 +320,19 @@ function buildDeps(input: {
       async getTopUtmSources() {
         return [];
       },
+      async getAllUtmSources() {
+        return [];
+      },
       async getUtmSourcesSince() {
         return [];
+      },
+      async getUtmSourceDetails() {
+        return {
+          utmSource: "direct",
+          todayCount: 0,
+          yesterdayCount: 0,
+          totalCount: 0
+        };
       },
       async getAllUsers() {
         return users;

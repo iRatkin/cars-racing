@@ -6,6 +6,8 @@ import type {
 } from "../telegram/invoice-link.js";
 import type { CatalogCar } from "../cars-catalog/cars-catalog-repository.js";
 import type { Season } from "../seasons/seasons-domain.js";
+import type { UtmSourceCount } from "../users/users-repository.js";
+import { buildUtmSourceCallbackData } from "./admin-utm.js";
 
 export const ADMIN_BTN = {
   MAIN_USERS: "👤 Users",
@@ -17,6 +19,7 @@ export const ADMIN_BTN = {
   USERS_FIND: "🔍 Find User",
   USERS_EXPORT: "📥 Export Users",
   USERS_TODAY_UTM: "📈 Today UTM",
+  USERS_UTM_DETAILS: "Показать детально по UTM",
   USER_ADD_100: "➕ 100 RC",
   USER_ADD_500: "➕ 500 RC",
   USER_ADD_CUSTOM: "➕ Custom RC",
@@ -56,6 +59,7 @@ export function buildUsersMenuReplyKeyboard(): TelegramReplyKeyboardMarkup {
   return replyKeyboard([
     [ADMIN_BTN.USERS_FIND],
     [ADMIN_BTN.USERS_EXPORT, ADMIN_BTN.USERS_TODAY_UTM],
+    [ADMIN_BTN.USERS_UTM_DETAILS],
     [ADMIN_BTN.BACK]
   ]);
 }
@@ -165,6 +169,19 @@ export function buildGiveCarInlineList(
   return { inline_keyboard: chunkInPairs(buttons) };
 }
 
+export function buildUtmSourcesInlineList(
+  sources: UtmSourceCount[]
+): TelegramInlineKeyboardMarkup | null {
+  if (sources.length === 0) {
+    return null;
+  }
+  const buttons: TelegramInlineKeyboardButton[] = sources.map((source) => ({
+    text: formatUtmSourceButtonText(source),
+    callback_data: buildUtmSourceCallbackData(source.utmSource)
+  }));
+  return { inline_keyboard: chunkInPairs(buttons) };
+}
+
 function replyKeyboard(rows: string[][]): TelegramReplyKeyboardMarkup {
   return {
     keyboard: rows.map((row) => row.map(btn)),
@@ -183,4 +200,11 @@ function chunkInPairs(buttons: TelegramInlineKeyboardButton[]): TelegramInlineKe
     rows.push(buttons.slice(i, i + 2));
   }
   return rows;
+}
+
+function formatUtmSourceButtonText(source: UtmSourceCount): string {
+  const label = source.utmSource.length > 42
+    ? `${source.utmSource.slice(0, 39)}...`
+    : source.utmSource;
+  return `${label} (${source.count})`;
 }

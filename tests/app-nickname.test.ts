@@ -247,8 +247,21 @@ class InMemoryUsersRepository implements UsersRepository {
     return [];
   }
 
+  async getAllUtmSources(): Promise<UtmSourceCount[]> {
+    return [];
+  }
+
   async getUtmSourcesSince(): Promise<UtmSourceCount[]> {
     return [];
+  }
+
+  async getUtmSourceDetails() {
+    return {
+      utmSource: "direct",
+      todayCount: 0,
+      yesterdayCount: 0,
+      totalCount: 0
+    };
   }
 
   async getAllUsers(): Promise<AppUser[]> {

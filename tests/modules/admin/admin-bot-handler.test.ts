@@ -9,7 +9,12 @@ import { ADMIN_SESSION_TTL_MS } from "../../../src/modules/admin/admin-session.j
 import type { CatalogCar } from "../../../src/modules/cars-catalog/cars-catalog-repository.js";
 import type { PurchaseStatsSummary } from "../../../src/modules/payments/purchases-repository.js";
 import type { Season } from "../../../src/modules/seasons/seasons-domain.js";
-import type { AppUser } from "../../../src/modules/users/users-repository.js";
+import type {
+  AppUser,
+  UserUtmSourceDetails,
+  UtmSourceCount,
+  UtmSourceDetailsQuery
+} from "../../../src/modules/users/users-repository.js";
 
 interface SentMessage {
   chat_id: number | string;
@@ -79,9 +84,90 @@ describe("createAdminBotHandler", () => {
     expect(sentMessages).toHaveLength(1);
     expect(sentMessages[0]?.text).toContain("<b>Admin Bot</b>");
   });
+
+  test("shows UTM source buttons from the users menu", async () => {
+    const { handler, sentMessages } = buildHandler({
+      utmSources: [
+        { utmSource: "blogger", count: 4 },
+        { utmSource: "direct", count: 2 }
+      ]
+    });
+
+    await handler(textUpdate({ text: "/menu" }));
+    await handler(textUpdate({ text: ADMIN_BTN.MAIN_USERS }));
+    sentMessages.length = 0;
+
+    await handler(textUpdate({ text: ADMIN_BTN.USERS_UTM_DETAILS }));
+
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]?.text).toBe("📊 <b>UTM details</b>\n\nChoose a source:");
+    expect(sentMessages[0]?.reply_markup).toMatchObject({
+      inline_keyboard: [
+        [
+          {
+            text: "blogger (4)",
+            callback_data: expect.stringMatching(/^utmsrc:[A-Za-z0-9_-]+$/)
+          },
+          {
+            text: "direct (2)",
+            callback_data: expect.stringMatching(/^utmsrc:[A-Za-z0-9_-]+$/)
+          }
+        ]
+      ]
+    });
+  });
+
+  test("shows today yesterday and total counts for a selected UTM source", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-25T12:34:00.000Z"));
+    const detailsQueries: UtmSourceDetailsQuery[] = [];
+    const { handler, sentMessages } = buildHandler({
+      utmSources: [{ utmSource: "blogger", count: 9 }],
+      utmDetails: {
+        utmSource: "blogger",
+        todayCount: 3,
+        yesterdayCount: 2,
+        totalCount: 9
+      },
+      onUtmDetailsQuery: (query) => detailsQueries.push(query)
+    });
+
+    await handler(textUpdate({ text: "/menu" }));
+    await handler(textUpdate({ text: ADMIN_BTN.MAIN_USERS }));
+    sentMessages.length = 0;
+    await handler(textUpdate({ text: ADMIN_BTN.USERS_UTM_DETAILS }));
+    const markup = sentMessages[0]?.reply_markup as {
+      inline_keyboard: Array<Array<{ callback_data: string }>>;
+    };
+    const callbackData = markup.inline_keyboard[0]?.[0]?.callback_data;
+    expect(callbackData).toBeTruthy();
+
+    sentMessages.length = 0;
+    await handler(callbackUpdate({ data: callbackData ?? "" }));
+
+    expect(detailsQueries).toEqual([
+      {
+        utmSource: "blogger",
+        todayStart: new Date("2026-05-24T21:00:00.000Z"),
+        tomorrowStart: new Date("2026-05-25T21:00:00.000Z"),
+        yesterdayStart: new Date("2026-05-23T21:00:00.000Z")
+      }
+    ]);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]?.text).toBe(
+      "📊 <b>UTM source: blogger</b>\n\n" +
+        "Сегодня: <b>3</b>\n" +
+        "Вчера: <b>2</b>\n" +
+        "Всего: <b>9</b>"
+    );
+  });
 });
 
-function buildHandler() {
+function buildHandler(options: {
+  utmSources?: UtmSourceCount[];
+  utmDetails?: UserUtmSourceDetails;
+  onUtmDetailsQuery?: (query: UtmSourceDetailsQuery) => void;
+} = {}) {
   const sentMessages: SentMessage[] = [];
   const cars: CatalogCar[] = [];
   const seasons: Season[] = [];
@@ -155,8 +241,22 @@ function buildHandler() {
       async getTopUtmSources() {
         return [];
       },
+      async getAllUtmSources() {
+        return options.utmSources ?? [];
+      },
       async getUtmSourcesSince() {
         return [];
+      },
+      async getUtmSourceDetails(query: UtmSourceDetailsQuery) {
+        options.onUtmDetailsQuery?.(query);
+        return (
+          options.utmDetails ?? {
+            utmSource: query.utmSource,
+            todayCount: 0,
+            yesterdayCount: 0,
+            totalCount: 0
+          }
+        );
       },
       async getAllUsers() {
         return users;
@@ -247,6 +347,28 @@ function textUpdate(input: {
       },
       chat: { id: input.chatId ?? 777 },
       text: input.text
+    }
+  };
+}
+
+function callbackUpdate(input: {
+  data: string;
+  fromId?: number;
+  chatId?: number;
+}) {
+  return {
+    update_id: 1,
+    callback_query: {
+      id: "callback_1",
+      from: {
+        id: input.fromId ?? 42,
+        first_name: "Admin"
+      },
+      message: {
+        message_id: 1,
+        chat: { id: input.chatId ?? 777 }
+      },
+      data: input.data
     }
   };
 }

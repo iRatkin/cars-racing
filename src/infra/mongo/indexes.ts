@@ -48,6 +48,12 @@ export const usersIndexes = [
       name: "users_utmSource",
       partialFilterExpression: { utmSource: { $type: "string" } }
     }
+  },
+  {
+    keys: { utmSource: 1, createdAt: -1 },
+    options: {
+      name: "users_utmSource_createdAt"
+    }
   }
 ] as const satisfies readonly CollectionIndexDefinition[];
 
