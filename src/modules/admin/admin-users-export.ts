@@ -18,7 +18,7 @@ export async function buildUsersExportWorkbook(users: AppUser[]): Promise<Uint8A
   sheet.columns = [{ key: "userId", width: 30 }];
 
   for (const user of users) {
-    sheet.addRow({ userId: user.userId });
+    sheet.addRow({ userId: formatExportUserId(user.userId) });
   }
 
   const arrayBuffer = await workbook.xlsx.writeBuffer();
@@ -31,4 +31,8 @@ export async function buildUsersExportWorkbook(users: AppUser[]): Promise<Uint8A
 export function buildUsersExportFileName(now: Date): string {
   const stamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
   return `users-export-${stamp}.xlsx`;
+}
+
+function formatExportUserId(userId: string): string {
+  return userId.startsWith("usr_") ? userId.slice("usr_".length) : userId;
 }

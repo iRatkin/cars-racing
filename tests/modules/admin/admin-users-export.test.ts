@@ -5,7 +5,7 @@ import { buildUsersExportWorkbook } from "../../../src/modules/admin/admin-users
 import type { AppUser } from "../../../src/modules/users/users-repository.js";
 
 describe("buildUsersExportWorkbook", () => {
-  test("exports user ids without a header row", async () => {
+  test("exports telegram ids without a header row", async () => {
     const buffer = await buildUsersExportWorkbook([user("usr_1"), user("usr_2")]);
 
     const workbook = new ExcelJS.Workbook();
@@ -14,8 +14,8 @@ describe("buildUsersExportWorkbook", () => {
     const sheet = workbook.getWorksheet("Users");
     expect(sheet).toBeDefined();
     expect(sheet?.rowCount).toBe(2);
-    expect(sheet?.getCell("A1").value).toBe("usr_1");
-    expect(sheet?.getCell("A2").value).toBe("usr_2");
+    expect(sheet?.getCell("A1").value).toBe("1");
+    expect(sheet?.getCell("A2").value).toBe("2");
   });
 });
 
