@@ -68,7 +68,10 @@ export function getDueSeasonNotificationEvents(
   ];
 
   return candidates.filter(
-    (candidate) => candidate.scheduledAt.getTime() <= referenceNow.getTime()
+    (candidate) =>
+      candidate.scheduledAt.getTime() <= referenceNow.getTime() &&
+      (candidate.eventType === "season_started" ||
+        candidate.scheduledAt.getTime() >= season.startsAt.getTime())
   );
 }
 

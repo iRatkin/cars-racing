@@ -44,6 +44,22 @@ describe("season automation schedule", () => {
     expect(events[2]?.scheduledAt.toISOString()).toBe("2026-04-28T17:00:00.000Z");
   });
 
+  test("does not backfill ending notifications scheduled before a short season starts", () => {
+    const season = {
+      seasonId: "sea_1d",
+      startsAt: new Date("2026-05-25T13:00:00.000Z"),
+      endsAt: new Date("2026-05-26T13:00:00.000Z")
+    };
+    const now = new Date("2026-05-25T13:01:00.000Z");
+
+    const events = getDueSeasonNotificationEvents(season, now);
+
+    expect(events.map((event) => event.eventType)).toEqual([
+      "season_started",
+      "season_ends_in_1d"
+    ]);
+  });
+
   test("builds deterministic season event keys", () => {
     const key = buildSeasonAutomationEventKey({
       seasonId: "sea_1",
