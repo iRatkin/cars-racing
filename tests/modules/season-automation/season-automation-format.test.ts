@@ -9,24 +9,28 @@ describe("season automation formatters", () => {
   test("formats player start notification", () => {
     const text = formatPlayerSeasonNotification({
       eventType: "season_started",
-      nick: "Drift<Name>"
+      nick: "Drift<Name>",
+      seasonEndsAt: new Date("2026-04-29T17:00:00.000Z")
     });
 
     expect(text).toBe(
       "🏁🔥 Турнир начался!\n" +
-      "Заезжай в RACEDRIFT, набирай очки и сражайся за реальный приз 🏆"
+      "Заезжай в RACEDRIFT, набирай очки и сражайся за реальный приз 🏆\n" +
+      "Дата окончания: 29.04.2026, 20:00 МСК"
     );
   });
 
   test("formats player ending notification", () => {
     const text = formatPlayerSeasonNotification({
       eventType: "season_ends_in_6h",
-      nick: "Ivan_42"
+      nick: "Ivan_42",
+      seasonEndsAt: new Date("2026-04-29T17:00:00.000Z")
     });
 
     expect(text).toBe(
       "⏳🏎️ Турнир скоро закончится!\n" +
-      "У тебя ещё есть шанс улучшить результат и побороться за главный приз 🏁"
+      "У тебя ещё есть шанс улучшить результат и побороться за главный приз 🏁\n" +
+      "Дата окончания: 29.04.2026, 20:00 МСК"
     );
   });
 
@@ -48,7 +52,8 @@ describe("season automation formatters", () => {
 
     expect(text).toBe(
       "🏆 Турнир завершён!\n" +
-      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Ana, Bob&lt;Name&gt;, Cid"
+      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Ana, Bob&lt;Name&gt;, Cid\n" +
+      "Для получения призов — пишите на админский аккаунт @racedrift_admin"
     );
     expect(text).not.toContain("Dee");
     expect(text).not.toContain("1500");

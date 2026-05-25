@@ -152,7 +152,7 @@ async function processDueSeasonEvents(
         if (event.eventType === "season_finished_admin_top10") {
           await sendFinishedWinnersTop3(deps, season, event.eventType);
         } else {
-          await sendPlayerNotification(deps, event.eventType);
+          await sendPlayerNotification(deps, season, event.eventType);
         }
         await deps.jobEventsRepository.markCompleted(eventKey);
       } catch (error) {
@@ -168,6 +168,7 @@ async function processDueSeasonEvents(
 
 async function sendPlayerNotification(
   deps: CreateSeasonAutomationServiceDeps,
+  season: { endsAt: Date },
   eventType: SeasonAutomationEventType
 ): Promise<void> {
   const users = await deps.usersRepository.getAllUsers();
@@ -180,7 +181,8 @@ async function sendPlayerNotification(
         chatId: user.telegramUserId,
         text: formatPlayerSeasonNotification({
           eventType,
-          nick: buildPublicNick(user)
+          nick: buildPublicNick(user),
+          seasonEndsAt: season.endsAt
         })
       });
       sent += 1;

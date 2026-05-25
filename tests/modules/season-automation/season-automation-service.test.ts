@@ -52,13 +52,15 @@ describe("season automation service", () => {
       chatId: "111",
       text:
         "🏁🔥 Турнир начался!\n" +
-        "Заезжай в RACEDRIFT, набирай очки и сражайся за реальный приз 🏆"
+        "Заезжай в RACEDRIFT, набирай очки и сражайся за реальный приз 🏆\n" +
+        "Дата окончания: 29.04.2026, 20:00 МСК"
     });
     expect(deps.playerMessages).toContainEqual({
       chatId: "111",
       text:
         "⏳🏎️ Турнир скоро закончится!\n" +
-        "У тебя ещё есть шанс улучшить результат и побороться за главный приз 🏁"
+        "У тебя ещё есть шанс улучшить результат и побороться за главный приз 🏁\n" +
+        "Дата окончания: 29.04.2026, 20:00 МСК"
     });
     expect(deps.playerMessages.length).toBe(3);
   });
@@ -119,12 +121,14 @@ describe("season automation service", () => {
     expect(deps.adminMessages[0]?.chatId).toBe("999");
     expect(deps.adminMessages[0]?.text).toBe(
       "🏆 Турнир завершён!\n" +
-      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion, RunnerUp, Bronze"
+      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion, RunnerUp, Bronze\n" +
+      "Для получения призов — пишите на админский аккаунт @racedrift_admin"
     );
     expect(deps.adminMessages[0]?.text).not.toContain("Fourth");
     const finalMessage =
       "🏆 Турнир завершён!\n" +
-      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion, RunnerUp, Bronze";
+      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion, RunnerUp, Bronze\n" +
+      "Для получения призов — пишите на админский аккаунт @racedrift_admin";
     expect(deps.playerMessages.filter((message) => message.text === finalMessage)).toEqual([
       {
         chatId: "111",
@@ -173,7 +177,8 @@ describe("season automation service", () => {
     expect(deps.adminMessages).toEqual([]);
     const finalMessage =
       "🏆 Турнир завершён!\n" +
-      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion";
+      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion\n" +
+      "Для получения призов — пишите на админский аккаунт @racedrift_admin";
     expect(deps.playerMessages.filter((message) => message.text === finalMessage)).toEqual([
       {
         chatId: "111",
