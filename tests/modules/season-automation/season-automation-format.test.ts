@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   formatAdminSeasonFinishedTopMessage,
+  formatPlayerSeasonFinishedTopMessage,
   formatPlayerSeasonNotification
 } from "../../../src/modules/season-automation/season-automation-format.js";
 
@@ -34,8 +35,8 @@ describe("season automation formatters", () => {
     );
   });
 
-  test("formats finished tournament message with top-3 winner nicknames", () => {
-    const text = formatAdminSeasonFinishedTopMessage({
+  test("formats player finished tournament message with top-3 winner nicknames", () => {
+    const text = formatPlayerSeasonFinishedTopMessage({
       season: {
         title: "Spring <Cup>",
         mapId: "map_1",
@@ -43,10 +44,37 @@ describe("season automation formatters", () => {
       },
       totalParticipants: 2,
       entries: [
-        { rank: 1, nick: "Ana", bestScore: 1500, totalRaces: 3 },
-        { rank: 2, nick: "Bob<Name>", bestScore: 900, totalRaces: 1 },
-        { rank: 3, nick: "Cid", bestScore: 800, totalRaces: 1 },
-        { rank: 4, nick: "Dee", bestScore: 700, totalRaces: 1 }
+        {
+          rank: 1,
+          nick: "Ana",
+          telegramUserId: "111",
+          username: "ana_tg",
+          bestScore: 1500,
+          totalRaces: 3
+        },
+        {
+          rank: 2,
+          nick: "Bob<Name>",
+          telegramUserId: "222",
+          username: "bob_tg",
+          bestScore: 900,
+          totalRaces: 1
+        },
+        {
+          rank: 3,
+          nick: "Cid",
+          telegramUserId: "333",
+          bestScore: 800,
+          totalRaces: 1
+        },
+        {
+          rank: 4,
+          nick: "Dee",
+          telegramUserId: "444",
+          username: "dee_tg",
+          bestScore: 700,
+          totalRaces: 1
+        }
       ]
     });
 
@@ -56,6 +84,52 @@ describe("season automation formatters", () => {
       "Для получения призов — пишите на админский аккаунт @racedrift_admin"
     );
     expect(text).not.toContain("Dee");
+    expect(text).not.toContain("1500");
+  });
+
+  test("formats admin finished tournament message with Telegram contacts", () => {
+    const text = formatAdminSeasonFinishedTopMessage({
+      season: {
+        title: "Spring <Cup>",
+        mapId: "map_1",
+        endsAt: new Date("2026-04-29T17:00:00.000Z")
+      },
+      totalParticipants: 2,
+      entries: [
+        {
+          rank: 1,
+          nick: "AppChampion",
+          telegramUserId: "111",
+          username: "champion_tg",
+          bestScore: 1500,
+          totalRaces: 3
+        },
+        {
+          rank: 2,
+          nick: "AppRunner",
+          telegramUserId: "222",
+          username: "runner_tg",
+          bestScore: 900,
+          totalRaces: 1
+        },
+        {
+          rank: 3,
+          nick: "AppNoUsername",
+          telegramUserId: "333",
+          bestScore: 800,
+          totalRaces: 1
+        }
+      ]
+    });
+
+    expect(text).toBe(
+      "🏆 Турнир завершён!\n" +
+      "Победители для выдачи призов:\n" +
+      "1. @champion_tg\n" +
+      "2. @runner_tg\n" +
+      "3. Telegram ID 333"
+    );
+    expect(text).not.toContain("AppChampion");
     expect(text).not.toContain("1500");
   });
 });

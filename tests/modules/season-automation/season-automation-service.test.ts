@@ -69,10 +69,10 @@ describe("season automation service", () => {
     const deps = buildDeps({
       seasons: [season("sea_done", "2026-04-22T17:00:00.000Z", "2026-04-29T17:00:00.000Z")],
       users: [
-        user("usr_1", "111", "Champion"),
-        user("usr_2", "222", "RunnerUp"),
-        user("usr_3", "333", "Bronze"),
-        user("usr_4", "444", "Fourth")
+        user("usr_1", "111", "Champion", "champion_tg"),
+        user("usr_2", "222", "RunnerUp", "runner_tg"),
+        user("usr_3", "333", "Bronze", "bronze_tg"),
+        user("usr_4", "444", "Fourth", "fourth_tg")
       ],
       leaderboard: [
         {
@@ -121,9 +121,12 @@ describe("season automation service", () => {
     expect(deps.adminMessages[0]?.chatId).toBe("999");
     expect(deps.adminMessages[0]?.text).toBe(
       "🏆 Турнир завершён!\n" +
-      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: Champion, RunnerUp, Bronze\n" +
-      "Для получения призов — пишите на админский аккаунт @racedrift_admin"
+      "Победители для выдачи призов:\n" +
+      "1. @champion_tg\n" +
+      "2. @runner_tg\n" +
+      "3. @bronze_tg"
     );
+    expect(deps.adminMessages[0]?.text).not.toContain("Champion");
     expect(deps.adminMessages[0]?.text).not.toContain("Fourth");
     const finalMessage =
       "🏆 Турнир завершён!\n" +
@@ -374,11 +377,17 @@ function season(seasonId: string, startsAt: string, endsAt: string) {
   };
 }
 
-function user(userId: string, telegramUserId: string, nick: string): AppUser {
+function user(
+  userId: string,
+  telegramUserId: string,
+  nick: string,
+  username?: string
+): AppUser {
   return {
     userId,
     telegramUserId,
     firstName: nick,
+    username,
     nick,
     nickNormalized: nick.toLowerCase(),
     ownedCarIds: [],

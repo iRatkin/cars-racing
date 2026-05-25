@@ -10,6 +10,8 @@ export interface PlayerSeasonNotificationInput {
 export interface AdminTopEntry {
   rank: number;
   nick: string;
+  telegramUserId: string;
+  username?: string;
   bestScore: number;
   totalRaces: number;
 }
@@ -43,7 +45,7 @@ export function formatPlayerSeasonNotification(
   );
 }
 
-export function formatAdminSeasonFinishedTopMessage(
+export function formatPlayerSeasonFinishedTopMessage(
   input: AdminSeasonFinishedTopMessageInput
 ): string {
   const winnersList =
@@ -59,6 +61,29 @@ export function formatAdminSeasonFinishedTopMessage(
     `Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: ${winnersList}\n` +
     "Для получения призов — пишите на админский аккаунт @racedrift_admin"
   );
+}
+
+export function formatAdminSeasonFinishedTopMessage(
+  input: AdminSeasonFinishedTopMessageInput
+): string {
+  const winnersList =
+    input.entries.length === 0
+      ? "победителей нет"
+      : input.entries
+          .slice(0, 3)
+          .map((entry, index) => `${index + 1}. ${formatAdminWinnerContact(entry)}`)
+          .join("\n");
+
+  return "🏆 Турнир завершён!\n" + `Победители для выдачи призов:\n${winnersList}`;
+}
+
+function formatAdminWinnerContact(entry: AdminTopEntry): string {
+  const username = entry.username?.replace(/^@/, "").trim();
+  if (username) {
+    return `@${escapeHtml(username)}`;
+  }
+
+  return `Telegram ID ${escapeHtml(entry.telegramUserId)}`;
 }
 
 function formatMoscowDateTime(date: Date): string {

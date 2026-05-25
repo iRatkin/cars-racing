@@ -9,6 +9,7 @@ import type { AppUser, UsersRepository } from "../users/users-repository.js";
 import type { JobEventsRepository } from "./job-events-repository.js";
 import {
   formatAdminSeasonFinishedTopMessage,
+  formatPlayerSeasonFinishedTopMessage,
   formatPlayerSeasonNotification,
   type AdminTopEntry
 } from "./season-automation-format.js";
@@ -220,16 +221,21 @@ async function sendFinishedWinnersTop3(
     deps.seasonEntriesRepository.countEntries(season.seasonId)
   ]);
   const topEntries = await buildAdminTopEntries(deps, entries);
-  const text = formatAdminSeasonFinishedTopMessage({
+  const playerText = formatPlayerSeasonFinishedTopMessage({
+    season,
+    totalParticipants,
+    entries: topEntries
+  });
+  const adminText = formatAdminSeasonFinishedTopMessage({
     season,
     totalParticipants,
     entries: topEntries
   });
 
-  await sendPlayerBroadcast(deps, eventType, text);
+  await sendPlayerBroadcast(deps, eventType, playerText);
 
   for (const chatId of deps.adminTelegramIds) {
-    await deps.telegram.sendAdminMessage({ chatId, text });
+    await deps.telegram.sendAdminMessage({ chatId, text: adminText });
   }
 }
 
@@ -285,6 +291,8 @@ async function buildAdminTopEntries(
     rows.push({
       rank,
       nick: user ? buildPublicNick(user) : buildUnknownUserNick(entry.userId),
+      telegramUserId: user?.telegramUserId ?? telegramUserIdFromUserId(entry.userId),
+      username: user?.username,
       bestScore: entry.bestScore,
       totalRaces: entry.totalRaces
     });
