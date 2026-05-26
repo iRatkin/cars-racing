@@ -99,6 +99,40 @@ describe("MongoJobEventsRepository", () => {
     expect(second.claimed).toBe(true);
     expect(collection.rows.get(first.eventKey)?.attempts).toBe(2);
   });
+
+  test("suppresses an event as completed without sending it", async () => {
+    const collection = new FakeJobEventsCollection();
+    const repo = new MongoJobEventsRepository(
+      collection,
+      () => new Date("2026-04-27T10:00:00.000Z")
+    );
+    const eventKey = "season:sea_1:season_ends_in_1d:2026-04-28T17:00:00.000Z";
+
+    await repo.suppressEvent({
+      eventKey,
+      eventType: "season_ends_in_1d",
+      seasonId: "sea_1",
+      scheduledAt: new Date("2026-04-28T17:00:00.000Z"),
+      source: "admin",
+      reason: "manual_finish"
+    });
+    const claim = await repo.claimEvent({
+      eventKey,
+      eventType: "season_ends_in_1d",
+      seasonId: "sea_1",
+      scheduledAt: new Date("2026-04-28T17:00:00.000Z"),
+      source: "cron"
+    });
+
+    expect(claim.claimed).toBe(false);
+    expect(collection.rows.get(eventKey)).toMatchObject({
+      status: "completed",
+      attempts: 0,
+      source: "admin",
+      outcome: "suppressed",
+      reason: "manual_finish"
+    });
+  });
 });
 
 function matchesRetryFilter(

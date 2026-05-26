@@ -1,4 +1,4 @@
-import type { SeasonEntry } from "../seasons/seasons-domain.js";
+import { computeSeasonStatus, type Season, type SeasonEntry } from "../seasons/seasons-domain.js";
 import type { SeasonEntriesRepository } from "../seasons/season-entries-repository.js";
 import type {
   CreateSeasonInput,
@@ -6,7 +6,7 @@ import type {
 } from "../seasons/seasons-repository.js";
 import { buildPublicNick } from "../users/nickname.js";
 import type { AppUser, UsersRepository } from "../users/users-repository.js";
-import type { JobEventsRepository } from "./job-events-repository.js";
+import type { JobEventSource, JobEventsRepository } from "./job-events-repository.js";
 import {
   formatAdminSeasonFinishedTopMessage,
   formatPlayerSeasonFinishedTopMessage,
@@ -18,6 +18,7 @@ import {
   buildSeasonWindowCreationEventKey,
   getDueSeasonNotificationEvents,
   getMoscowWeeklySeasonWindow,
+  getSeasonNotificationCandidates,
   type SeasonAutomationEventType
 } from "./season-schedule.js";
 
@@ -44,15 +45,51 @@ export interface CreateSeasonAutomationServiceDeps {
 
 export interface SeasonAutomationService {
   runOnce(referenceNow: Date): Promise<void>;
+  runScheduledTick(referenceNow: Date): Promise<void>;
+  finishSeasonNow(
+    seasonId: string,
+    referenceNow: Date,
+    source: SeasonLifecycleSource
+  ): Promise<Season | null>;
+  syncManualSeasonChange(
+    seasonId: string,
+    previous: Season | null,
+    updated: Season,
+    referenceNow: Date,
+    source: SeasonLifecycleSource
+  ): Promise<void>;
 }
+
+export type SeasonLifecycleSource = JobEventSource;
 
 export function createSeasonAutomationService(
   deps: CreateSeasonAutomationServiceDeps
 ): SeasonAutomationService {
+  async function runScheduledTick(referenceNow: Date): Promise<void> {
+    await ensureWeeklySeasonExists(deps, referenceNow);
+    await processDueSeasonEvents(deps, referenceNow, "cron");
+  }
+
   return {
     async runOnce(referenceNow: Date): Promise<void> {
-      await ensureWeeklySeasonExists(deps, referenceNow);
-      await processDueSeasonEvents(deps, referenceNow);
+      await runScheduledTick(referenceNow);
+    },
+    runScheduledTick,
+    async finishSeasonNow(
+      seasonId: string,
+      referenceNow: Date,
+      source: SeasonLifecycleSource
+    ): Promise<Season | null> {
+      return finishSeasonNow(deps, seasonId, referenceNow, source);
+    },
+    async syncManualSeasonChange(
+      seasonId: string,
+      previous: Season | null,
+      updated: Season,
+      referenceNow: Date,
+      source: SeasonLifecycleSource
+    ): Promise<void> {
+      await syncManualSeasonChange(deps, seasonId, previous, updated, referenceNow, source);
     }
   };
 }
@@ -88,7 +125,8 @@ async function ensureWeeklySeasonExists(
     eventKey,
     eventType: "season_window_created",
     seasonId: previous.seasonId,
-    scheduledAt: window.startsAt
+    scheduledAt: window.startsAt,
+    source: "cron"
   });
   if (!claim.claimed) {
     return;
@@ -115,7 +153,7 @@ async function ensureWeeklySeasonExists(
         "season automation: cloned season"
       );
     }
-    await deps.jobEventsRepository.markCompleted(eventKey);
+    await deps.jobEventsRepository.markCompleted(eventKey, { source: "cron" });
   } catch (error) {
     await deps.jobEventsRepository.markFailed(eventKey, errorToString(error));
     deps.logger?.error(
@@ -127,43 +165,196 @@ async function ensureWeeklySeasonExists(
 
 async function processDueSeasonEvents(
   deps: CreateSeasonAutomationServiceDeps,
-  referenceNow: Date
+  referenceNow: Date,
+  source: SeasonLifecycleSource
 ): Promise<void> {
   const seasons = await deps.seasonsRepository.getAllSeasons(referenceNow);
+  const dueEvents = seasons
+    .flatMap((season) =>
+      getDueSeasonNotificationEvents(season, referenceNow).map((event) => ({
+        season,
+        event
+      }))
+    )
+    .sort((a, b) => compareDueEvents(a.event, b.event));
 
-  for (const season of seasons) {
-    const dueEvents = getDueSeasonNotificationEvents(season, referenceNow);
-    for (const event of dueEvents) {
-      const eventKey = buildSeasonAutomationEventKey({
-        seasonId: season.seasonId,
-        eventType: event.eventType,
-        scheduledAt: event.scheduledAt
-      });
-      const claim = await deps.jobEventsRepository.claimEvent({
-        eventKey,
-        eventType: event.eventType,
-        seasonId: season.seasonId,
-        scheduledAt: event.scheduledAt
-      });
-      if (!claim.claimed) {
-        continue;
-      }
+  for (const item of dueEvents) {
+    await executeSeasonEvent(deps, item.season, item.event.eventType, item.event.scheduledAt, source);
+  }
+}
 
-      try {
-        if (event.eventType === "season_finished_admin_top10") {
-          await sendFinishedWinnersTop3(deps, season, event.eventType);
-        } else {
-          await sendPlayerNotification(deps, season, event.eventType);
-        }
-        await deps.jobEventsRepository.markCompleted(eventKey);
-      } catch (error) {
-        await deps.jobEventsRepository.markFailed(eventKey, errorToString(error));
-        deps.logger?.error(
-          { err: errorToString(error), eventKey },
-          "season automation: event failed"
-        );
-      }
+async function executeSeasonEvent(
+  deps: CreateSeasonAutomationServiceDeps,
+  season: Season,
+  eventType: SeasonAutomationEventType,
+  scheduledAt: Date,
+  source: SeasonLifecycleSource
+): Promise<boolean> {
+  const eventKey = buildSeasonAutomationEventKey({
+    seasonId: season.seasonId,
+    eventType,
+    scheduledAt
+  });
+  const claim = await deps.jobEventsRepository.claimEvent({
+    eventKey,
+    eventType,
+    seasonId: season.seasonId,
+    scheduledAt,
+    source
+  });
+  if (!claim.claimed) {
+    return false;
+  }
+
+  try {
+    if (eventType === "season_finished_admin_top10") {
+      await sendFinishedWinnersTop3(deps, season, eventType);
+    } else {
+      await sendPlayerNotification(deps, season, eventType);
     }
+    await deps.jobEventsRepository.markCompleted(eventKey, {
+      source,
+      outcome: "sent"
+    });
+    return true;
+  } catch (error) {
+    await deps.jobEventsRepository.markFailed(eventKey, errorToString(error));
+    deps.logger?.error(
+      { err: errorToString(error), eventKey },
+      "season automation: event failed"
+    );
+    return false;
+  }
+}
+
+async function finishSeasonNow(
+  deps: CreateSeasonAutomationServiceDeps,
+  seasonId: string,
+  referenceNow: Date,
+  source: SeasonLifecycleSource
+): Promise<Season | null> {
+  const existing = await deps.seasonsRepository.getSeasonById(seasonId, referenceNow);
+  if (!existing || computeSeasonStatus(existing, referenceNow) === "finished") {
+    return null;
+  }
+
+  const nextStartsAt =
+    existing.startsAt.getTime() >= referenceNow.getTime()
+      ? new Date(referenceNow.getTime() - 1000)
+      : existing.startsAt;
+  const updated = await deps.seasonsRepository.updateSeason(
+    seasonId,
+    { startsAt: nextStartsAt, endsAt: referenceNow },
+    referenceNow
+  );
+  if (!updated) {
+    return null;
+  }
+
+  await suppressStaleEndingNotifications(deps, existing, referenceNow, source, "manual_finish");
+  await executeSeasonEvent(
+    deps,
+    updated,
+    "season_finished_admin_top10",
+    updated.endsAt,
+    source
+  );
+  return updated;
+}
+
+async function syncManualSeasonChange(
+  deps: CreateSeasonAutomationServiceDeps,
+  seasonId: string,
+  previous: Season | null,
+  updated: Season,
+  referenceNow: Date,
+  source: SeasonLifecycleSource
+): Promise<void> {
+  await suppressStaleEndingNotifications(
+    deps,
+    updated,
+    referenceNow,
+    source,
+    "manual_season_change"
+  );
+
+  const wasStarted =
+    previous !== null && previous.startsAt.getTime() <= referenceNow.getTime();
+  const isActive =
+    updated.startsAt.getTime() <= referenceNow.getTime() &&
+    updated.endsAt.getTime() > referenceNow.getTime();
+  if (isActive && !wasStarted) {
+    await executeSeasonEvent(deps, updated, "season_started", updated.startsAt, source);
+    return;
+  }
+
+  const wasFinished =
+    previous !== null && previous.endsAt.getTime() <= referenceNow.getTime();
+  const isFinished = updated.endsAt.getTime() <= referenceNow.getTime();
+  if (isFinished && !wasFinished) {
+    await executeSeasonEvent(
+      deps,
+      updated,
+      "season_finished_admin_top10",
+      updated.endsAt,
+      source
+    );
+  }
+}
+
+async function suppressStaleEndingNotifications(
+  deps: CreateSeasonAutomationServiceDeps,
+  season: Pick<Season, "seasonId" | "startsAt" | "endsAt">,
+  referenceNow: Date,
+  source: SeasonLifecycleSource,
+  reason: string
+): Promise<void> {
+  const staleEvents = getSeasonNotificationCandidates(season).filter(
+    (event) =>
+      event.eventType !== "season_started" &&
+      event.eventType !== "season_finished_admin_top10" &&
+      event.scheduledAt.getTime() <= referenceNow.getTime()
+  );
+
+  for (const event of staleEvents) {
+    await deps.jobEventsRepository.suppressEvent({
+      eventKey: buildSeasonAutomationEventKey({
+        seasonId: season.seasonId,
+        eventType: event.eventType,
+        scheduledAt: event.scheduledAt
+      }),
+      eventType: event.eventType,
+      seasonId: season.seasonId,
+      scheduledAt: event.scheduledAt,
+      source,
+      reason
+    });
+  }
+}
+
+function compareDueEvents(
+  a: { eventType: SeasonAutomationEventType; scheduledAt: Date },
+  b: { eventType: SeasonAutomationEventType; scheduledAt: Date }
+): number {
+  const timeDelta = a.scheduledAt.getTime() - b.scheduledAt.getTime();
+  if (timeDelta !== 0) {
+    return timeDelta;
+  }
+  return eventOrder(a.eventType) - eventOrder(b.eventType);
+}
+
+function eventOrder(eventType: SeasonAutomationEventType): number {
+  switch (eventType) {
+    case "season_finished_admin_top10":
+      return 0;
+    case "season_started":
+      return 1;
+    case "season_ends_in_3d":
+      return 2;
+    case "season_ends_in_1d":
+      return 3;
+    case "season_ends_in_6h":
+      return 4;
   }
 }
 

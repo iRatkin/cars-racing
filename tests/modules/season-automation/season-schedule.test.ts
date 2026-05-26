@@ -54,10 +54,7 @@ describe("season automation schedule", () => {
 
     const events = getDueSeasonNotificationEvents(season, now);
 
-    expect(events.map((event) => event.eventType)).toEqual([
-      "season_started",
-      "season_ends_in_1d"
-    ]);
+    expect(events.map((event) => event.eventType)).toEqual(["season_started"]);
   });
 
   test("builds deterministic season event keys", () => {

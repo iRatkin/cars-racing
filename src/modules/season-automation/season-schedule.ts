@@ -50,6 +50,28 @@ export function getDueSeasonNotificationEvents(
   season: { seasonId: string; startsAt: Date; endsAt: Date },
   referenceNow: Date
 ): SeasonNotificationCandidate[] {
+  const isFinished = referenceNow.getTime() >= season.endsAt.getTime();
+  return getSeasonNotificationCandidates(season).filter((candidate) => {
+    if (candidate.scheduledAt.getTime() > referenceNow.getTime()) {
+      return false;
+    }
+    if (candidate.eventType === "season_finished_admin_top10") {
+      return true;
+    }
+    if (isFinished) {
+      return false;
+    }
+    if (candidate.eventType === "season_started") {
+      return true;
+    }
+    return candidate.scheduledAt.getTime() > season.startsAt.getTime();
+  });
+}
+
+export function getSeasonNotificationCandidates(season: {
+  startsAt: Date;
+  endsAt: Date;
+}): SeasonNotificationCandidate[] {
   const candidates: SeasonNotificationCandidate[] = [
     { eventType: "season_started", scheduledAt: season.startsAt },
     {
@@ -66,13 +88,7 @@ export function getDueSeasonNotificationEvents(
     },
     { eventType: "season_finished_admin_top10", scheduledAt: season.endsAt }
   ];
-
-  return candidates.filter(
-    (candidate) =>
-      candidate.scheduledAt.getTime() <= referenceNow.getTime() &&
-      (candidate.eventType === "season_started" ||
-        candidate.scheduledAt.getTime() >= season.startsAt.getTime())
-  );
+  return candidates;
 }
 
 export function buildSeasonAutomationEventKey(input: {

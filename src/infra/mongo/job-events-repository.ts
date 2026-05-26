@@ -1,8 +1,12 @@
 import type { WithId } from "mongodb";
 
 import type {
+  JobEventCompletionInput,
   JobEventClaimInput,
   JobEventClaimResult,
+  JobEventOutcome,
+  JobEventSource,
+  JobEventSuppressInput,
   JobEventStatus,
   JobEventsRepository
 } from "../../modules/season-automation/job-events-repository.js";
@@ -14,6 +18,9 @@ export interface MongoJobEventDocument {
   scheduledAt: Date;
   status: JobEventStatus;
   attempts: number;
+  source?: JobEventSource;
+  outcome?: JobEventOutcome;
+  reason?: string;
   lastError?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -54,9 +61,10 @@ export class MongoJobEventsRepository implements JobEventsRepository {
       {
         $set: {
           status: "started",
-          updatedAt: now
+          updatedAt: now,
+          ...(input.source ? { source: input.source } : {})
         },
-        $unset: { lastError: "" },
+        $unset: { lastError: "", outcome: "", reason: "" },
         $inc: { attempts: 1 }
       },
       { returnDocument: "after", includeResultMetadata: false }
@@ -85,6 +93,7 @@ export class MongoJobEventsRepository implements JobEventsRepository {
       scheduledAt: input.scheduledAt,
       status: "started",
       attempts: 1,
+      ...(input.source ? { source: input.source } : {}),
       createdAt: now,
       updatedAt: now
     };
@@ -108,10 +117,21 @@ export class MongoJobEventsRepository implements JobEventsRepository {
     }
   }
 
-  async markCompleted(eventKey: string): Promise<void> {
+  async markCompleted(
+    eventKey: string,
+    completion?: JobEventCompletionInput
+  ): Promise<void> {
+    const set: Record<string, unknown> = {
+      status: "completed",
+      updatedAt: this.now()
+    };
+    if (completion?.source) set.source = completion.source;
+    if (completion?.outcome) set.outcome = completion.outcome;
+    if (completion?.reason) set.reason = completion.reason;
+
     await this.collection.updateOne(
       { eventKey },
-      { $set: { status: "completed", updatedAt: this.now() } }
+      { $set: set, $unset: { lastError: "" } }
     );
   }
 
@@ -126,6 +146,53 @@ export class MongoJobEventsRepository implements JobEventsRepository {
         }
       }
     );
+  }
+
+  async suppressEvent(input: JobEventSuppressInput): Promise<void> {
+    const existing = await this.collection.findOne({ eventKey: input.eventKey });
+    if (existing?.status === "completed") {
+      return;
+    }
+
+    const now = this.now();
+    if (existing) {
+      await this.collection.updateOne(
+        { eventKey: input.eventKey },
+        {
+          $set: {
+            status: "completed",
+            source: input.source,
+            outcome: "suppressed",
+            reason: input.reason,
+            updatedAt: now
+          },
+          $unset: { lastError: "" }
+        }
+      );
+      return;
+    }
+
+    const document: MongoJobEventDocument = {
+      eventKey: input.eventKey,
+      eventType: input.eventType,
+      seasonId: input.seasonId,
+      scheduledAt: input.scheduledAt,
+      status: "completed",
+      attempts: 0,
+      source: input.source,
+      outcome: "suppressed",
+      reason: input.reason,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    try {
+      await this.collection.insertOne(document);
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) {
+        throw error;
+      }
+    }
   }
 }
 

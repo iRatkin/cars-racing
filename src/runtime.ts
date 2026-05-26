@@ -11,6 +11,10 @@ import {
   type MongoPurchaseDocument
 } from "./infra/mongo/purchases-repository.js";
 import {
+  MongoJobEventsRepository,
+  type MongoJobEventDocument
+} from "./infra/mongo/job-events-repository.js";
+import {
   MongoRaceRunsRepository,
   type MongoRaceRunDocument
 } from "./infra/mongo/race-runs-repository.js";
@@ -32,10 +36,12 @@ import {
 } from "./infra/mongo/users-repository.js";
 import {
   createTelegramInvoiceLink,
+  sendTelegramMessage,
   type TelegramFetch
 } from "./modules/telegram/invoice-link.js";
 import { createWebhookHandler } from "./modules/telegram/webhook-handler.js";
 import { createAdminBotHandler } from "./modules/admin/admin-bot-handler.js";
+import { createSeasonAutomationService } from "./modules/season-automation/season-automation-service.js";
 
 export interface MongoCollectionFactory {
   collection<TSchema extends Document = Document>(name: string): Collection<TSchema>;
@@ -71,6 +77,9 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
   const raceRunsRepository = new MongoRaceRunsRepository(
     input.db.collection<MongoRaceRunDocument>("raceRuns")
   );
+  const jobEventsRepository = new MongoJobEventsRepository(
+    input.db.collection<MongoJobEventDocument>("jobEvents")
+  );
 
   const telegramOptions = {
     botToken: input.config.botToken,
@@ -85,17 +94,38 @@ export function buildMongoBackedApp(input: BuildMongoBackedAppInput) {
   });
 
   let adminBotHandler: AppDependencies["adminHandleTelegramWebhook"] | undefined;
-  if (input.config.adminConfig) {
+  const adminConfig = input.config.adminConfig;
+  if (adminConfig) {
+    const seasonLifecycle = createSeasonAutomationService({
+      seasonsRepository,
+      seasonEntriesRepository,
+      usersRepository,
+      jobEventsRepository,
+      adminTelegramIds: adminConfig.adminTelegramIds,
+      telegram: {
+        sendPlayerMessage: ({ chatId, text }) =>
+          sendTelegramMessage(telegramOptions, { chatId, text }),
+        sendAdminMessage: ({ chatId, text }) =>
+          sendTelegramMessage(
+            {
+              botToken: adminConfig.adminBotToken,
+              fetchImpl: input.fetchImpl
+            },
+            { chatId, text }
+          )
+      }
+    });
     adminBotHandler = createAdminBotHandler({
       usersRepository,
       carsCatalogRepository,
       seasonsRepository,
       purchasesRepository,
       telegramOptions: {
-        botToken: input.config.adminConfig.adminBotToken,
+        botToken: adminConfig.adminBotToken,
         fetchImpl: input.fetchImpl
       },
-      allowedTelegramIds: input.config.adminConfig.adminTelegramIds
+      seasonLifecycle,
+      allowedTelegramIds: adminConfig.adminTelegramIds
     });
   }
 

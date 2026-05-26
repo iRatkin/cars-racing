@@ -61,6 +61,7 @@ import {
   parsePrizePoolShareStrict
 } from "./admin-input.js";
 import { computeSeasonStatus } from "../seasons/seasons-domain.js";
+import type { SeasonAutomationService } from "../season-automation/season-automation-service.js";
 
 export interface AdminBotLogger extends AdminCallbackLogger {
   info(obj: Record<string, unknown>, msg: string): void;
@@ -69,6 +70,7 @@ export interface AdminBotLogger extends AdminCallbackLogger {
 
 export interface CreateAdminBotHandlerDeps extends AdminDeps {
   allowedTelegramIds: string[];
+  seasonLifecycle: SeasonAutomationService;
   logger?: AdminBotLogger;
   pendingActionsSweepIntervalMs?: number;
 }
@@ -673,10 +675,21 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
       const now = new Date();
       const patch =
         pending.type === "editseason_ends" ? { endsAt: date } : { startsAt: date };
+      const previous = await deps.seasonsRepository.getSeasonById(seasonId, now);
+      if (!previous) {
+        throw new AdminInputError(`Season not found: ${seasonId}`);
+      }
       const season = await deps.seasonsRepository.updateSeason(seasonId, patch, now);
       if (!season) {
         throw new AdminInputError(`Season not found: ${seasonId}`);
       }
+      await deps.seasonLifecycle.syncManualSeasonChange(
+        seasonId,
+        previous,
+        season,
+        now,
+        "admin"
+      );
       await sendTelegramMessage(deps.telegramOptions, {
         chatId,
         text: formatSeasonDetail(season),
@@ -928,6 +941,13 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
         },
         now
       );
+      await deps.seasonLifecycle.syncManualSeasonChange(
+        season.seasonId,
+        null,
+        season,
+        now,
+        "admin"
+      );
       await sendTelegramMessage(deps.telegramOptions, {
         chatId,
         text: `✅ Season created!\n\n${formatSeasonDetail(season)}`,
@@ -965,30 +985,19 @@ export function createAdminBotHandler(deps: CreateAdminBotHandlerDeps): AdminWeb
       return;
     }
     const now = new Date();
-    const existing = await deps.seasonsRepository.getSeasonById(seasonId, now);
-    if (!existing) {
+    const updated = await deps.seasonLifecycle.finishSeasonNow(seasonId, now, "admin");
+    if (!updated) {
       await navigate(chatId, adminId, { type: "seasons" });
       return;
     }
-    const newStartsAt =
-      existing.startsAt.getTime() >= now.getTime()
-        ? new Date(now.getTime() - 1000)
-        : existing.startsAt;
-    const updated = await deps.seasonsRepository.updateSeason(
-      seasonId,
-      { endsAt: now, startsAt: newStartsAt },
-      now
-    );
-    if (updated) {
-      await sendTelegramMessage(deps.telegramOptions, {
-        chatId,
-        text: `✅ Season finished.\n\n${formatSeasonDetail(updated)}`,
-        replyMarkup: buildSeasonDetailReplyKeyboard(
-          computeSeasonStatus(updated, now) !== "finished"
-        )
-      });
-      setSession(adminId, { type: "season", seasonId }, null);
-    }
+    await sendTelegramMessage(deps.telegramOptions, {
+      chatId,
+      text: `✅ Season finished.\n\n${formatSeasonDetail(updated)}`,
+      replyMarkup: buildSeasonDetailReplyKeyboard(
+        computeSeasonStatus(updated, now) !== "finished"
+      )
+    });
+    setSession(adminId, { type: "season", seasonId }, null);
   }
 
   async function showTodayUtmReport(chatId: number): Promise<void> {

@@ -9,6 +9,7 @@ import { ADMIN_SESSION_TTL_MS } from "../../../src/modules/admin/admin-session.j
 import type { CatalogCar } from "../../../src/modules/cars-catalog/cars-catalog-repository.js";
 import type { PurchaseStatsSummary } from "../../../src/modules/payments/purchases-repository.js";
 import type { Season } from "../../../src/modules/seasons/seasons-domain.js";
+import type { SeasonLifecycleSource } from "../../../src/modules/season-automation/season-automation-service.js";
 import type {
   AppUser,
   UserUtmSourceDetails,
@@ -161,16 +162,72 @@ describe("createAdminBotHandler", () => {
         "Всего: <b>9</b>"
     );
   });
+
+  test("finishes a season through the lifecycle service", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-25T15:00:00.000Z"));
+    const finishCalls: Array<{
+      seasonId: string;
+      now: Date;
+      source: SeasonLifecycleSource;
+    }> = [];
+    const activeSeason = season(
+      "sea_active",
+      "2026-05-20T15:00:00.000Z",
+      "2026-05-27T15:00:00.000Z"
+    );
+    const { handler, sentMessages } = buildHandler({
+      seasons: [activeSeason],
+      onFinishSeasonNow: (seasonId, now, source) => {
+        finishCalls.push({ seasonId, now, source });
+        return {
+          ...activeSeason,
+          endsAt: now,
+          status: "finished"
+        };
+      }
+    });
+
+    await handler(textUpdate({ text: "/seasons" }));
+    const seasonsList = sentMessages.find(
+      (message) => (message.reply_markup as { inline_keyboard?: unknown } | undefined)?.inline_keyboard
+    );
+    const markup = seasonsList?.reply_markup as {
+      inline_keyboard?: Array<Array<{ callback_data: string }>>;
+    };
+    const callbackData = markup.inline_keyboard?.[0]?.[0]?.callback_data;
+    expect(callbackData).toBe("editseason:sea_active");
+    await handler(callbackUpdate({ data: callbackData ?? "" }));
+
+    sentMessages.length = 0;
+    await handler(textUpdate({ text: ADMIN_BTN.SEASON_FINISH }));
+    await handler(textUpdate({ text: ADMIN_BTN.CONFIRM_FINISH }));
+
+    expect(finishCalls).toEqual([
+      {
+        seasonId: "sea_active",
+        now: new Date("2026-05-25T15:00:00.000Z"),
+        source: "admin"
+      }
+    ]);
+    expect(sentMessages.at(-1)?.text).toContain("✅ Season finished.");
+  });
 });
 
 function buildHandler(options: {
   utmSources?: UtmSourceCount[];
   utmDetails?: UserUtmSourceDetails;
   onUtmDetailsQuery?: (query: UtmSourceDetailsQuery) => void;
+  seasons?: Season[];
+  onFinishSeasonNow?: (
+    seasonId: string,
+    now: Date,
+    source: SeasonLifecycleSource
+  ) => Season | null;
 } = {}) {
   const sentMessages: SentMessage[] = [];
   const cars: CatalogCar[] = [];
-  const seasons: Season[] = [];
+  const seasons: Season[] = [...(options.seasons ?? [])];
   const users: AppUser[] = [];
   const purchaseStats: PurchaseStatsSummary = {
     activeIntents: 0,
@@ -323,6 +380,14 @@ function buildHandler(options: {
       async getStatsSummary() {
         return purchaseStats;
       }
+    },
+    seasonLifecycle: {
+      async runOnce() {},
+      async runScheduledTick() {},
+      async finishSeasonNow(seasonId: string, now: Date, source: SeasonLifecycleSource) {
+        return options.onFinishSeasonNow?.(seasonId, now, source) ?? null;
+      },
+      async syncManualSeasonChange() {}
     }
   };
 
@@ -381,5 +446,18 @@ function user(userId: string, raceCoinsBalance = 0): AppUser {
     ownedCarIds: [],
     garageRevision: 0,
     raceCoinsBalance
+  };
+}
+
+function season(seasonId: string, startsAt: string, endsAt: string): Season {
+  return {
+    seasonId,
+    title: "Weekly Cup",
+    mapId: "map_1",
+    entryFee: 25,
+    prizePoolShare: 0.2,
+    startsAt: new Date(startsAt),
+    endsAt: new Date(endsAt),
+    status: "active"
   };
 }

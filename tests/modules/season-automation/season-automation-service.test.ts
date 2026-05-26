@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { createSeasonAutomationService } from "../../../src/modules/season-automation/season-automation-service.js";
 import type { JobEventClaimInput } from "../../../src/modules/season-automation/job-events-repository.js";
-import type { SeasonEntry } from "../../../src/modules/seasons/seasons-domain.js";
+import type { Season, SeasonEntry } from "../../../src/modules/seasons/seasons-domain.js";
 import type { CreateSeasonInput } from "../../../src/modules/seasons/seasons-repository.js";
 import type { AppUser } from "../../../src/modules/users/users-repository.js";
 
@@ -189,6 +189,110 @@ describe("season automation service", () => {
       }
     ]);
   });
+
+  test("does not send a same-moment ending reminder when a one-day season starts", async () => {
+    const deps = buildDeps({
+      seasons: [season("sea_1d", "2026-05-25T15:00:00.000Z", "2026-05-26T15:00:00.000Z")],
+      users: [user("usr_1", "111", "Racer_1")]
+    });
+    const service = createSeasonAutomationService(deps);
+
+    await service.runScheduledTick(new Date("2026-05-25T15:01:00.000Z"));
+
+    expect(deps.claimedEventKeys).toEqual([
+      "season:sea_1d:season_started:2026-05-25T15:00:00.000Z"
+    ]);
+    expect(deps.playerMessages).toHaveLength(1);
+    expect(deps.playerMessages[0]?.text).toContain("Турнир начался");
+    expect(deps.playerMessages[0]?.text).not.toContain("Турнир скоро закончится");
+  });
+
+  test("sends an ending season before a starting season at the same boundary", async () => {
+    const deps = buildDeps({
+      seasons: [
+        season("sea_old", "2026-05-18T15:00:00.000Z", "2026-05-25T15:00:00.000Z"),
+        season("sea_new", "2026-05-25T15:00:00.000Z", "2026-05-26T15:00:00.000Z")
+      ],
+      users: [user("usr_1", "111", "Racer_1")],
+      leaderboard: [
+        {
+          entryId: "entry_1",
+          seasonId: "sea_old",
+          userId: "usr_1",
+          bestScore: 2000,
+          totalRaces: 4,
+          entryFeeSnapshot: 25,
+          createdAt: new Date("2026-05-18T18:00:00.000Z")
+        }
+      ]
+    });
+    const service = createSeasonAutomationService(deps);
+
+    await service.runScheduledTick(new Date("2026-05-25T15:01:00.000Z"));
+
+    expect(deps.claimedEventKeys.slice(0, 2)).toEqual([
+      "season:sea_old:season_finished_admin_top10:2026-05-25T15:00:00.000Z",
+      "season:sea_new:season_started:2026-05-25T15:00:00.000Z"
+    ]);
+    expect(deps.playerMessages[0]?.text).toContain("Турнир завершён");
+    expect(deps.playerMessages[1]?.text).toContain("Турнир начался");
+  });
+
+  test("finishSeasonNow sends the final once and suppresses stale reminders", async () => {
+    const deps = buildDeps({
+      seasons: [season("sea_manual", "2026-05-20T15:00:00.000Z", "2026-05-25T16:00:00.000Z")],
+      users: [user("usr_1", "111", "Racer_1")]
+    });
+    const service = createSeasonAutomationService(deps);
+
+    const first = await service.finishSeasonNow(
+      "sea_manual",
+      new Date("2026-05-25T15:00:00.000Z"),
+      "admin"
+    );
+    const second = await service.finishSeasonNow(
+      "sea_manual",
+      new Date("2026-05-25T15:05:00.000Z"),
+      "admin"
+    );
+
+    expect(first?.endsAt.toISOString()).toBe("2026-05-25T15:00:00.000Z");
+    expect(second).toBeNull();
+    expect(deps.playerMessages.filter((message) => message.text.includes("Турнир завершён"))).toHaveLength(1);
+    expect(deps.suppressedEvents.map((event) => event.eventType)).toEqual([
+      "season_ends_in_3d",
+      "season_ends_in_1d",
+      "season_ends_in_6h"
+    ]);
+  });
+
+  test("syncManualSeasonChange starts a newly active season without ending reminders", async () => {
+    const manualSeason = season(
+      "sea_manual_new",
+      "2026-05-25T15:00:00.000Z",
+      "2026-05-26T15:00:00.000Z"
+    );
+    const deps = buildDeps({
+      seasons: [manualSeason],
+      users: [user("usr_1", "111", "Racer_1")]
+    });
+    const service = createSeasonAutomationService(deps);
+
+    await service.syncManualSeasonChange(
+      manualSeason.seasonId,
+      null,
+      manualSeason,
+      new Date("2026-05-25T15:01:00.000Z"),
+      "admin"
+    );
+
+    expect(deps.playerMessages).toHaveLength(1);
+    expect(deps.playerMessages[0]?.text).toContain("Турнир начался");
+    expect(deps.playerMessages[0]?.text).not.toContain("Турнир скоро закончится");
+    expect(deps.suppressedEvents.map((event) => event.eventType)).toContain(
+      "season_ends_in_1d"
+    );
+  });
 });
 
 function buildDeps(input: {
@@ -206,6 +310,11 @@ function buildDeps(input: {
   const playerMessages: Array<{ chatId: string; text: string }> = [];
   const adminMessages: Array<{ chatId: string; text: string }> = [];
   const leaderboardLimits: number[] = [];
+  const suppressedEvents: Array<{
+    eventKey: string;
+    eventType: string;
+    reason: string;
+  }> = [];
 
   return {
     createdSeasons,
@@ -213,6 +322,7 @@ function buildDeps(input: {
     adminMessages,
     leaderboardLimits,
     claimedEventKeys,
+    suppressedEvents,
     seasonsRepository: {
       async getSeasonById(seasonId: string, referenceNow: Date) {
         return seasons.find((item) => item.seasonId === seasonId) ?? null;
@@ -255,8 +365,23 @@ function buildDeps(input: {
         seasons.push(created);
         return created;
       },
-      async updateSeason() {
-        return null;
+      async updateSeason(seasonId: string, patch: Partial<ReturnType<typeof season>>, referenceNow: Date) {
+        const index = seasons.findIndex((item) => item.seasonId === seasonId);
+        if (index === -1) {
+          return null;
+        }
+        seasons[index] = {
+          ...seasons[index],
+          ...patch,
+          status: computeStatus(
+            {
+              startsAt: patch.startsAt ?? seasons[index].startsAt,
+              endsAt: patch.endsAt ?? seasons[index].endsAt
+            },
+            referenceNow
+          )
+        };
+        return seasons[index];
       }
     },
     seasonEntriesRepository: {
@@ -356,7 +481,11 @@ function buildDeps(input: {
         };
       },
       async markCompleted() {},
-      async markFailed() {}
+      async markFailed() {},
+      async suppressEvent(event: { eventKey: string; eventType: string; reason: string }) {
+        suppressedEvents.push(event);
+        claimedEvents.add(event.eventKey);
+      }
     },
     telegram: {
       async sendPlayerMessage(message: { chatId: string; text: string }) {
@@ -375,7 +504,7 @@ function buildDeps(input: {
   };
 }
 
-function season(seasonId: string, startsAt: string, endsAt: string) {
+function season(seasonId: string, startsAt: string, endsAt: string): Season {
   return {
     seasonId,
     title: "Weekly Cup",
@@ -386,6 +515,19 @@ function season(seasonId: string, startsAt: string, endsAt: string) {
     endsAt: new Date(endsAt),
     status: "finished" as const
   };
+}
+
+function computeStatus(
+  season: { startsAt: Date; endsAt: Date },
+  referenceNow: Date
+): "upcoming" | "active" | "finished" {
+  if (referenceNow.getTime() < season.startsAt.getTime()) {
+    return "upcoming";
+  }
+  if (referenceNow.getTime() >= season.endsAt.getTime()) {
+    return "finished";
+  }
+  return "active";
 }
 
 function user(

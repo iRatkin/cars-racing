@@ -58,7 +58,7 @@ async function main(): Promise<void> {
       logger: consoleLogger
     });
 
-    await service.runOnce(new Date());
+    await service.runScheduledTick(new Date());
   } finally {
     await mongoClient.close();
   }
