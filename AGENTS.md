@@ -70,10 +70,14 @@ Season automation:
 - Intended external schedule: every 5-15 minutes from Railway Cron, GitHub Actions, VPS cron, or any equivalent scheduler.
 - Railway evaluates cron in UTC; the weekly boundary expression for Wednesday 20:00 MSK is `0 17 * * 3`, but the preferred resilient tick is `*/15 * * * *` with Mongo idempotency.
 - Weekly season boundary is Wednesday 20:00 `Europe/Moscow` (implemented as UTC+03:00 for Phase 0).
+- `createSeasonAutomationService()` is the single lifecycle orchestrator for both cron and admin/manual season actions. Cron calls `runScheduledTick(now)`; admin bot calls `finishSeasonNow(seasonId, now, "admin")` and `syncManualSeasonChange(...)`.
 - If no manually created season exists for the current weekly window, the runner clones the latest previous season's `title`, `mapId`, `entryFee`, and `prizePoolShare`, then assigns the current weekly window dates.
 - Player notifications are sent by the main bot at season start, 3 days before end, 1 day before end, and 6 hours before end.
 - Admin bot sends top-10 ranked leaderboard summaries after season end when admin env vars are configured.
-- `jobEvents` stores idempotency records for season creation and notification events.
+- Due notification events are collected globally and sorted by `scheduledAt`; when an old season ends at the same moment a new one starts, the finished-season message is sent before the new start message.
+- Finished seasons no longer backfill old start/reminder notifications. Same-moment ending reminders are skipped for short seasons, so a 1-day season start does not also send "soon ending" at the same time.
+- Manual/admin season changes suppress stale ending reminders through `jobEvents` instead of sending them late. `Finish Now` sets `endsAt` to the current time, sends the normal final winners message once, and records stale `season_ends_in_*` events as suppressed.
+- `jobEvents` stores idempotency records for season creation and notification events; it also tracks optional `source`, `outcome`, and `reason` for sent/suppressed lifecycle events.
 
 Starter car detail:
 - Users are inserted into Mongo with `ownedCarIds: []`, `garageRevision: 0`, and `raceCoinsBalance: 0`.
@@ -85,7 +89,7 @@ Admin bot:
 - Registered only when `ADMIN_BOT_TOKEN`, `ADMIN_WEBHOOK_SECRET`, `ADMIN_TELEGRAM_IDS` env vars are all provided — otherwise the admin webhook route is not registered.
 - Webhook route: `POST /v1/admin/telegram/webhook` (separate secret `ADMIN_WEBHOOK_SECRET`, compared via `compareTelegramWebhookSecretToken`).
 - Access inside the handler is further gated by the `ADMIN_TELEGRAM_IDS` whitelist; unauthorized senders are silently ignored (warn logged).
-- Admin operations call existing repositories directly (no HTTP round-trips to the public API).
+- Admin operations call existing repositories/lifecycle services directly (no HTTP round-trips to the public API). Season creation, date edits, and `Finish Now` must go through `SeasonAutomationService` so cron/manual behavior stays idempotent.
 - Supports commands `/start`, `/menu`, `/user <id|username>`, `/cars`, `/seasons`, `/stats`.
 - **Navigation model**: reply-keyboard-based. Every menu/detail screen attaches a persistent reply keyboard (`is_persistent: true`, `resize_keyboard: true`) to the chat; button taps are plain text messages matched against the current session view. Inline keyboards are used **only** for three dynamic lists where the item IDs are dynamic: cars catalog (`editcar:<carId>`), seasons list (`editseason:<seasonId>`), and give-car picker (`givecar:<userId>:<carId>`). Each list view sends two messages: one carrying the reply keyboard (e.g. `[➕ Add Car] [« Back]`), the other carrying the inline list.
 - **Session state** (in-memory `Map<adminId, AdminSession>`, 30-minute TTL, periodic sweep): `{ view: AdminView, pending: PendingAdminAction | null, expiresAt }`. `AdminView` union tracks the currently rendered screen (`main` / `users_menu` / `user` / `cars` / `car` / `give_car` / `seasons` / `season` / `stats`) plus wizard states (`wizard { cancelTo }`, `addcar_purchasable`, `confirm_create_season`, `confirm_finish_season`). Inbound text is dispatched by current view + label; sessions are lost on process restart. If an authorized admin taps a stale reply keyboard or sends non-command text after a process restart/session expiry, the bot now sends a short reset notice and reopens the main menu instead of silently ignoring the text.
@@ -271,7 +275,7 @@ Domain:
 - `src/modules/seasons/seasons-domain.ts`: season types, leaderboard view types, training entry types, race run mode types, `computeSeasonStatus`, `canEnterSeason`, `canStartRace`.
 - `src/modules/seasons/seasons-repository.ts`, `season-entries-repository.ts`, `season-training-entries-repository.ts`, `race-runs-repository.ts`: repository interfaces; `seasons-repository.ts` also exports `validateSeasonDateRange`, `CreateSeasonInput`, `UpdateSeasonInput`.
 - `src/modules/seasons/season-atomic.ts`: result types for transactional season flows (ranked and training finish).
-- `src/modules/season-automation/`: schedule calculations, Telegram message formatting, job event interface, and automation orchestration service.
+- `src/modules/season-automation/`: schedule calculations, Telegram message formatting, job event interface, and season lifecycle orchestration service shared by cron and admin/manual season actions.
 
 Admin module (`src/modules/admin/`):
 - `admin-config.ts`: `PendingAdminAction` + `AdminPendingActionType` union, `parseAdminTelegramIds`, TTL/prize-share constants.
@@ -372,6 +376,9 @@ Job event document shape, see `MongoJobEventDocument`:
 - `scheduledAt`
 - `status` (`started`, `completed`, `failed`)
 - `attempts`
+- optional `source` (`cron`, `admin`, `api`)
+- optional `outcome` (`sent`, `suppressed`)
+- optional `reason` for suppressed/completed-with-context events
 - optional `lastError`
 - timestamps
 
