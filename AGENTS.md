@@ -16,7 +16,7 @@ Target behavior:
 - User can purchase race coins bundles for Telegram Stars via invoice flow.
 - User can buy cars with race coins (no Telegram Stars involved).
 - Users can enter battle seasons for a configurable race-coins entry fee, run solo races with a server `seed`, submit scores, and view per-season leaderboards (competition ranking).
-- Users can also run **training** races on the active season map for free, without entering the season, and receive a separate personal per-season training highscore.
+- Users can also run **training** races for free, without entering a ranked season, and receive a separate personal per-season training highscore. Training must keep working even when there is no active tournament season.
 - API asks Telegram Bot API for an invoice link when purchasing race coins bundles.
 - Telegram POSTs payment webhook updates (`pre_checkout_query`, `successful_payment`) to the backend.
 - Webhook handler approves pre-checkout, grants race coins on successful payment.
@@ -62,7 +62,8 @@ Battle seasons:
 - Finishing a **ranked** race moves `raceRuns` to `finished` and updates `seasonEntries` (`totalRaces`, `bestScore` via `$max`) in one transaction.
 - Finishing a **training** race moves `raceRuns` to `finished` and updates `seasonTrainingEntries` (`totalRaces`, `bestScore` via `$max`) in one transaction.
 - `POST /v1/seasons/:seasonId/races/start` creates a ranked `raceRuns` row with `started` and returns `{ raceId, seed }`; finish requires matching `raceId`, `seed`, `started`, and `mode: "ranked"`.
-- `POST /v1/seasons/:seasonId/training-races/start` creates a training `raceRuns` row with `started` and returns `{ raceId, seed }`; it requires only an active season, not season entry or payment.
+- `POST /v1/seasons/:seasonId/training-races/start` creates a training `raceRuns` row with `started` and returns `{ raceId, seed, seasonId, mapId }`; it requires an existing season only, not an active season, season entry, or payment.
+- `GET /v1/training-context` and `POST /v1/training-races/start` are season-id-free training entrypoints. They choose the training context in this order: active season, first upcoming season, latest finished season. If no season exists at all, they return `TRAINING_CONTEXT_NOT_FOUND`.
 - `GET /v1/seasons` and `GET /v1/seasons/:seasonId` now include a `training` block with the caller's personal training `bestScore` and `totalRaces` for that season.
 
 Season automation:
@@ -219,6 +220,8 @@ Implemented routes:
 - `POST /v1/seasons/{seasonId}/enter`
 - `POST /v1/seasons/{seasonId}/races/start`
 - `POST /v1/seasons/{seasonId}/races/finish`
+- `GET /v1/training-context`
+- `POST /v1/training-races/start`
 - `POST /v1/seasons/{seasonId}/training-races/start`
 - `POST /v1/seasons/{seasonId}/training-races/finish`
 - `GET /v1/seasons/{seasonId}/training-highscore`
@@ -479,14 +482,24 @@ Car catalog document shape, see `MongoCarDocument`:
 `POST /v1/seasons/{seasonId}/races/finish`:
 - Body `{ raceId, seed, score }`; validates ownership, season match, seed, `started` status, and `mode: "ranked"`; completes run and updates entry in one transaction; `409 RACE_ALREADY_FINISHED` if already done.
 
+`GET /v1/training-context`:
+- Returns `{ seasonId, mapId, seasonStatus, training }` for the current free-training context.
+- Training context selection prefers the active season, then the first upcoming season, then the latest finished season. This keeps training available between tournaments.
+- Returns `404 TRAINING_CONTEXT_NOT_FOUND` only when no season exists.
+
+`POST /v1/training-races/start`:
+- Starts a free training race in the server-selected training context and returns `{ raceId, seed, seasonId, mapId }`.
+- Does **not** require an active season, `enter`, or race coins. The returned `seasonId` should be used when finishing through the season-specific finish endpoint.
+
 `POST /v1/seasons/{seasonId}/training-races/start`:
-- Requires `active` season only; does **not** require `enter` and does **not** spend race coins.
-- Creates `raceRuns` with `started`, `mode: "training"` and returns `{ raceId, seed }`.
+- Requires that the season exists only; it may be `active`, `upcoming`, or `finished`.
+- Does **not** require `enter` and does **not** spend race coins.
+- Creates `raceRuns` with `started`, `mode: "training"` and returns `{ raceId, seed, seasonId, mapId }`.
 
 `POST /v1/seasons/{seasonId}/training-races/finish`:
-- Body `{ raceId, seed, score }`; validates ownership, season match, seed, `started` status, and `mode: "training"`.
+- Body `{ raceId, seed, score, timeSeconds, raceCoinsEarned }`; validates ownership, season match, seed, `started` status, and `mode: "training"`.
 - Completes the run and upserts/updates `seasonTrainingEntries` in one transaction.
-- Returns `{ raceId, score, isNewBest, bestScore }` for the training highscore only; never affects ranked leaderboard or ranked season progress.
+- Returns `{ raceId, score, isNewBest, bestScore, raceCoinsEarned, raceCoinsBalance }` for the training highscore/reward only; never affects ranked leaderboard or ranked season progress.
 
 `GET /v1/seasons/{seasonId}/training-highscore`:
 - Returns the caller's personal training progress for that season as `{ seasonId, bestScore, totalRaces }`.

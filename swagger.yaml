@@ -322,6 +322,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /v1/training-context:
+    get:
+      tags:
+        - Seasons
+      summary: Get the current training context
+      operationId: getTrainingContext
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Season and map currently used for free training.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingContextResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No season exists to use as a training context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/training-races/start:
+    post:
+      tags:
+        - Seasons
+      summary: Start a free training race without requiring an active season
+      operationId: startTrainingRace
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Training race started with a context season, map, raceId, and seed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingRaceStartResponse"
+        "401":
+          description: Bearer token is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No season exists to use as a training context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/seasons/{seasonId}:
     get:
       tags:
@@ -534,7 +588,7 @@ paths:
     post:
       tags:
         - Seasons
-      summary: Start a training solo race on the season map
+      summary: Start a training solo race on an existing season map
       operationId: startSeasonTrainingRace
       security:
         - bearerAuth: []
@@ -547,11 +601,11 @@ paths:
             minLength: 1
       responses:
         "200":
-          description: Training race started with a new raceId and seed.
+          description: Training race started with a context season, map, raceId, and seed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RaceStartResponse"
+                $ref: "#/components/schemas/TrainingRaceStartResponse"
         "400":
           description: seasonId is missing or empty.
           content:
@@ -566,12 +620,6 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Season was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "422":
-          description: Season is not active.
           content:
             application/json:
               schema:
@@ -850,6 +898,7 @@ components:
             - SEASON_ID_REQUIRED
             - SEASON_NOT_FOUND
             - SEASON_NOT_ACTIVE
+            - TRAINING_CONTEXT_NOT_FOUND
             - ALREADY_ENTERED
             - NOT_ENTERED
             - INVALID_RACE_RESULT
@@ -1269,6 +1318,22 @@ components:
           type: string
         seed:
           type: string
+    TrainingRaceStartResponse:
+      type: object
+      required:
+        - raceId
+        - seed
+        - seasonId
+        - mapId
+      properties:
+        raceId:
+          type: string
+        seed:
+          type: string
+        seasonId:
+          type: string
+        mapId:
+          type: string
     RaceFinishRequest:
       type: object
       required:
@@ -1369,6 +1434,26 @@ components:
         totalRaces:
           type: integer
           minimum: 0
+    TrainingContextResponse:
+      type: object
+      required:
+        - seasonId
+        - mapId
+        - seasonStatus
+        - training
+      properties:
+        seasonId:
+          type: string
+        mapId:
+          type: string
+        seasonStatus:
+          type: string
+          enum:
+            - upcoming
+            - active
+            - finished
+        training:
+          $ref: "#/components/schemas/TrainingProgress"
     TrainingHighscoreResponse:
       type: object
       required:

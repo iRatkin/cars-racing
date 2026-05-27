@@ -529,6 +529,37 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
       const raceRunsRepo = raceRunsRepository;
       const txClient = mongoClient;
 
+      const findTrainingSeasonContext = async (requestNow: Date): Promise<Season | null> => {
+        const activeAndUpcoming = await seasonsRepo.getActiveAndUpcomingSeasons(requestNow);
+        const activeSeason = activeAndUpcoming.find(
+          (season) => computeSeasonStatus(season, requestNow) === "active"
+        );
+        if (activeSeason) {
+          return activeSeason;
+        }
+        if (activeAndUpcoming[0]) {
+          return activeAndUpcoming[0];
+        }
+        return seasonsRepo.findLatestSeasonBefore(requestNow, requestNow);
+      };
+
+      const startTrainingRace = async (season: Season, userId: string) => {
+        const seed = randomUUID();
+        const raceRun = await raceRunsRepo.createRaceRun({
+          seasonId: season.seasonId,
+          userId,
+          seed,
+          mode: "training"
+        });
+
+        return {
+          raceId: raceRun.raceId,
+          seed: raceRun.seed,
+          seasonId: season.seasonId,
+          mapId: season.mapId
+        };
+      };
+
       const buildSeasonResponse = async (season: Season, userId: string, requestNow: Date) => {
         const [entry, trainingEntry] = await Promise.all([
           seasonEntriesRepo.findEntry(season.seasonId, userId),
@@ -750,22 +781,50 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           return reply.code(404).send({ code: "SEASON_NOT_FOUND" });
         }
 
-        if (!canStartRace(season, requestNow)) {
-          return reply.code(422).send({ code: "SEASON_NOT_ACTIVE" });
+        return reply.send(await startTrainingRace(season, tokenPayload.sub));
+      });
+
+      app.get("/v1/training-context", async (request, reply) => {
+        const tokenPayload = await verifyJwtOrReject(request, reply);
+        if (!tokenPayload) {
+          return;
         }
 
-        const seed = randomUUID();
-        const raceRun = await raceRunsRepo.createRaceRun({
-          seasonId: season.seasonId,
-          userId: tokenPayload.sub,
-          seed,
-          mode: "training"
-        });
+        const requestNow = now?.() ?? new Date();
+        const season = await findTrainingSeasonContext(requestNow);
+        if (!season) {
+          return reply.code(404).send({ code: "TRAINING_CONTEXT_NOT_FOUND" });
+        }
+
+        const trainingEntry = await seasonTrainingEntriesRepo.findEntry(
+          season.seasonId,
+          tokenPayload.sub
+        );
 
         return reply.send({
-          raceId: raceRun.raceId,
-          seed: raceRun.seed
+          seasonId: season.seasonId,
+          mapId: season.mapId,
+          seasonStatus: computeSeasonStatus(season, requestNow),
+          training: {
+            bestScore: trainingEntry?.bestScore ?? null,
+            totalRaces: trainingEntry?.totalRaces ?? 0
+          }
         });
+      });
+
+      app.post("/v1/training-races/start", async (request, reply) => {
+        const tokenPayload = await verifyJwtOrReject(request, reply);
+        if (!tokenPayload) {
+          return;
+        }
+
+        const requestNow = now?.() ?? new Date();
+        const season = await findTrainingSeasonContext(requestNow);
+        if (!season) {
+          return reply.code(404).send({ code: "TRAINING_CONTEXT_NOT_FOUND" });
+        }
+
+        return reply.send(await startTrainingRace(season, tokenPayload.sub));
       });
 
       app.post("/v1/seasons/:seasonId/training-races/finish", async (request, reply) => {

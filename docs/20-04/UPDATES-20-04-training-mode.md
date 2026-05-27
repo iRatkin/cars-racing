@@ -4,12 +4,18 @@
 
 ## Что поменялось концептуально
 
-Теперь в активном сезоне есть **два независимых режима**:
+Теперь есть **два независимых режима**:
 
 - **Ranked**: как и раньше, нужно сначала войти в сезон через `POST /v1/seasons/:seasonId/enter`, потом можно стартовать ranked-заезды, отправлять score и попадать в лидерборд.
-- **Training**: бесплатный режим на карте текущего сезона. Не требует `enter`, не списывает race coins и не влияет на ranked leaderboard.
+- **Training**: бесплатный режим на карте тренировочного контекста. Не требует `enter`, не списывает race coins и не влияет на ranked leaderboard. Training работает даже если сейчас нет активного турнира.
 
 У training-режима есть только **личный seasonal highscore** и `totalRaces`. Общего тренировочного лидерборда пока нет.
+
+Тренировочный контекст выбирается сервером так:
+
+1. активный сезон, если он есть;
+2. ближайший upcoming-сезон, если активного нет;
+3. последний finished-сезон, если активных/upcoming сезонов нет.
 
 ## Общие правила
 
@@ -83,19 +89,73 @@ Content-Type: application/json
 
 Рекомендуемый flow для фронта:
 
-1. Загрузить сезон через `GET /v1/seasons` или `GET /v1/seasons/:seasonId`.
-2. Если `status === "active"`, показывать кнопку training независимо от `entered`.
-3. Перед **каждым** тренировочным заездом вызывать `POST /v1/seasons/:seasonId/training-races/start`.
-4. Сохранить `raceId` и `seed` локально до завершения заезда.
-5. После окончания гонки отправить `POST /v1/seasons/:seasonId/training-races/finish`.
-6. После успешного finish обновить UI:
+1. Получить тренировочный контекст через `GET /v1/training-context` или сразу вызвать `POST /v1/training-races/start`.
+2. Перед **каждым** тренировочным заездом вызывать `POST /v1/training-races/start`.
+3. Сохранить `raceId`, `seed` и `seasonId` локально до завершения заезда.
+4. После окончания гонки отправить `POST /v1/seasons/:seasonId/training-races/finish`, где `seasonId` берётся из start-ответа.
+5. После успешного finish обновить UI:
    - либо взять `bestScore` из ответа finish,
    - либо заново запросить `GET /v1/seasons/:seasonId`,
    - либо вызвать `GET /v1/seasons/:seasonId/training-highscore`.
 
 Без шага `training-races/start` корректно закончить тренировочный заезд нельзя.
 
-## Новый endpoint: старт training-заезда
+Старый flow тоже поддерживается: если клиент уже знает `seasonId`, можно вызывать `POST /v1/seasons/:seasonId/training-races/start`. Для training этот endpoint больше не требует, чтобы сезон был `active`.
+
+## Новый endpoint: тренировочный контекст
+
+### `GET /v1/training-context`
+
+**Назначение:** получить сезон и карту, которые сервер сейчас использует для training.
+
+**Response 200**
+
+```json
+{
+  "seasonId": "sea_123",
+  "mapId": "desert_map_01",
+  "seasonStatus": "finished",
+  "training": {
+    "bestScore": 1840,
+    "totalRaces": 6
+  }
+}
+```
+
+**Ошибки:**
+
+| HTTP | code |
+|------|------|
+| 401 | `UNAUTHORIZED` |
+| 404 | `TRAINING_CONTEXT_NOT_FOUND` |
+
+## Новый endpoint: старт training-заезда без seasonId
+
+### `POST /v1/training-races/start`
+
+**Назначение:** создать новый тренировочный заезд в текущем training-контексте и получить серверный `seed`.
+
+**Body:** можно отправлять `{}` или не отправлять тело.
+
+**Response 200**
+
+```json
+{
+  "raceId": "race_123",
+  "seed": "c1c955f4-51e3-43c8-8f7d-4e8d0ae87752",
+  "seasonId": "sea_123",
+  "mapId": "desert_map_01"
+}
+```
+
+**Ошибки:**
+
+| HTTP | code |
+|------|------|
+| 401 | `UNAUTHORIZED` |
+| 404 | `TRAINING_CONTEXT_NOT_FOUND` |
+
+## Endpoint: старт training-заезда для конкретного сезона
 
 ### `POST /v1/seasons/:seasonId/training-races/start`
 
@@ -106,7 +166,7 @@ Content-Type: application/json
 **Условия:**
 
 - сезон должен существовать;
-- сезон должен быть `active`;
+- сезон может быть `active`, `upcoming` или `finished`;
 - `enter` не требуется;
 - race coins не списываются.
 
@@ -115,7 +175,9 @@ Content-Type: application/json
 ```json
 {
   "raceId": "race_123",
-  "seed": "c1c955f4-51e3-43c8-8f7d-4e8d0ae87752"
+  "seed": "c1c955f4-51e3-43c8-8f7d-4e8d0ae87752",
+  "seasonId": "sea_123",
+  "mapId": "desert_map_01"
 }
 ```
 
@@ -123,6 +185,7 @@ Content-Type: application/json
 
 - `raceId`
 - `seed`
+- `seasonId`
 
 **Ошибки:**
 
@@ -131,7 +194,6 @@ Content-Type: application/json
 | 400 | `SEASON_ID_REQUIRED` |
 | 401 | `UNAUTHORIZED` |
 | 404 | `SEASON_NOT_FOUND` |
-| 422 | `SEASON_NOT_ACTIVE` |
 
 ## Новый endpoint: финиш training-заезда
 
@@ -143,7 +205,9 @@ Content-Type: application/json
 {
   "raceId": "race_123",
   "seed": "c1c955f4-51e3-43c8-8f7d-4e8d0ae87752",
-  "score": 1840
+  "score": 1840,
+  "timeSeconds": 42.5,
+  "raceCoinsEarned": 13
 }
 ```
 
@@ -172,7 +236,9 @@ Content-Type: application/json
   "raceId": "race_123",
   "score": 1840,
   "isNewBest": true,
-  "bestScore": 1840
+  "bestScore": 1840,
+  "raceCoinsEarned": 13,
+  "raceCoinsBalance": 250
 }
 ```
 
@@ -248,6 +314,7 @@ Content-Type: application/json
 - Пользователь может:
   - не участвовать в ranked,
   - но иметь training highscore в том же сезоне.
+- Training можно запускать, даже когда нет активного турнира.
 
 ## Рекомендации по UI
 
@@ -262,7 +329,7 @@ Content-Type: application/json
 - training status:
   - `training.bestScore`
   - `training.totalRaces`
-  - кнопку `Train`, если `status === "active"`
+  - кнопку `Train`, если есть training context или известен существующий `seasonId`
 
 ### После training finish
 
@@ -275,8 +342,8 @@ Content-Type: application/json
 
 ## Короткий client checklist
 
-- Для training-кнопки проверять только `status === "active"`.
+- Для основной training-кнопки используйте `GET /v1/training-context` или сразу `POST /v1/training-races/start`; не привязывайте её к `status === "active"`.
 - Не требовать `entered` для training.
 - Перед каждым training-run обязательно вызывать `training-races/start`.
-- На finish всегда отправлять тот же `raceId` и тот же `seed`.
+- На finish всегда отправлять тот же `seasonId`, `raceId` и тот же `seed`.
 - Ranked и training состояние хранить в UI раздельно.
