@@ -1,7 +1,10 @@
 import type { WithId } from "mongodb";
 import { randomUUID } from "node:crypto";
 
-import type { SeasonEntry } from "../../modules/seasons/seasons-domain.js";
+import {
+  countsTowardLeaderboard,
+  type SeasonEntry
+} from "../../modules/seasons/seasons-domain.js";
 import type {
   CreateSeasonEntryInput,
   SeasonEntriesRepository
@@ -75,7 +78,7 @@ export class MongoSeasonEntriesRepository implements SeasonEntriesRepository {
 
   async getLeaderboard(seasonId: string, limit: number): Promise<SeasonEntry[]> {
     const rows = await this.collection
-      .find({ seasonId })
+      .find({ seasonId, bestScore: { $gt: 0 } })
       .sort({ bestScore: -1, createdAt: 1, userId: 1 })
       .limit(limit)
       .toArray();
@@ -87,6 +90,9 @@ export class MongoSeasonEntriesRepository implements SeasonEntriesRepository {
     if (!document) {
       return null;
     }
+    if (!countsTowardLeaderboard(document.bestScore)) {
+      return null;
+    }
     const betterCount = await this.collection.countDocuments({
       seasonId,
       bestScore: { $gt: document.bestScore }
@@ -95,7 +101,7 @@ export class MongoSeasonEntriesRepository implements SeasonEntriesRepository {
   }
 
   async countEntries(seasonId: string): Promise<number> {
-    return this.collection.countDocuments({ seasonId });
+    return this.collection.countDocuments({ seasonId, bestScore: { $gt: 0 } });
   }
 }
 

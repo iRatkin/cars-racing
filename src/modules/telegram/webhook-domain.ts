@@ -175,7 +175,8 @@ export function isTelegramBotCommandUpdate(
   }
 
   const text = value.message.text as string;
-  return text === command || text.startsWith(`${command}@`);
+  const firstToken = text.split(/\s+/, 1)[0];
+  return firstToken === command || firstToken.startsWith(`${command}@`);
 }
 
 export function isTelegramCallbackQueryUpdate(

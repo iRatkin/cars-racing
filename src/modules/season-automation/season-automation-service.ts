@@ -1,4 +1,9 @@
-import { computeSeasonStatus, type Season, type SeasonEntry } from "../seasons/seasons-domain.js";
+import {
+  computeSeasonStatus,
+  countsTowardLeaderboard,
+  type Season,
+  type SeasonEntry
+} from "../seasons/seasons-domain.js";
 import type { SeasonEntriesRepository } from "../seasons/season-entries-repository.js";
 import type {
   CreateSeasonInput,
@@ -472,8 +477,11 @@ async function buildAdminTopEntries(
   const rows: AdminTopEntry[] = [];
   let previousScore: number | null = null;
   let previousRank = 0;
+  const leaderboardEntries = entries.filter((entry) =>
+    countsTowardLeaderboard(entry.bestScore)
+  );
 
-  for (const [index, entry] of entries.entries()) {
+  for (const [index, entry] of leaderboardEntries.entries()) {
     const rank =
       previousScore !== null && entry.bestScore === previousScore
         ? previousRank

@@ -747,7 +747,7 @@ paths:
             default: 100
       responses:
         "200":
-          description: Top participants and optional current player placement.
+          description: Top participants with positive ranked scores and optional current player placement.
           content:
             application/json:
               schema:
@@ -1489,6 +1489,7 @@ components:
             - $ref: "#/components/schemas/LeaderboardEntry"
         totalParticipants:
           type: integer
+          description: Number of season entries with bestScore greater than 0.
           minimum: 0
     LeaderboardEntry:
       type: object
@@ -1511,7 +1512,7 @@ components:
           pattern: "^[A-Za-z0-9_]{3,20}$"
         bestScore:
           type: integer
-          minimum: 0
+          minimum: 1
         totalRaces:
           type: integer
           minimum: 0

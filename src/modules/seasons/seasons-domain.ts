@@ -83,3 +83,7 @@ export function canEnterSeason(season: Season, referenceNow: Date): boolean {
 export function canStartRace(season: Season, referenceNow: Date): boolean {
   return computeSeasonStatus(season, referenceNow) === "active";
 }
+
+export function countsTowardLeaderboard(bestScore: number): boolean {
+  return bestScore > 0;
+}

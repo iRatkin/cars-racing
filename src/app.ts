@@ -36,6 +36,7 @@ import type { UsersRepository } from "./modules/users/users-repository.js";
 import {
   canStartRace,
   computeSeasonStatus,
+  countsTowardLeaderboard,
   type Season,
   type LeaderboardEntry
 } from "./modules/seasons/seasons-domain.js";
@@ -971,7 +972,7 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
           currentPlayer = playerInTop;
         } else {
           const playerEntry = await seasonEntriesRepo.findEntry(season.seasonId, tokenPayload.sub);
-          if (playerEntry) {
+          if (playerEntry && countsTowardLeaderboard(playerEntry.bestScore)) {
             const playerRank = await seasonEntriesRepo.getEntryRank(
               season.seasonId,
               tokenPayload.sub

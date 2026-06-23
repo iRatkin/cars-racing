@@ -153,6 +153,45 @@ describe("season automation service", () => {
     expect(deps.leaderboardLimits).toEqual([3]);
   });
 
+  test("does not count zero-score entries as finished season winners", async () => {
+    const deps = buildDeps({
+      seasons: [season("sea_done", "2026-04-22T17:00:00.000Z", "2026-04-29T17:00:00.000Z")],
+      users: [user("usr_zero", "111", "ZeroScore", "zero_tg")],
+      leaderboard: [
+        {
+          entryId: "entry_zero",
+          seasonId: "sea_done",
+          userId: "usr_zero",
+          bestScore: 0,
+          totalRaces: 1,
+          entryFeeSnapshot: 25,
+          createdAt: new Date("2026-04-22T18:00:00.000Z")
+        }
+      ]
+    });
+    const service = createSeasonAutomationService(deps);
+
+    await service.runOnce(new Date("2026-04-29T17:01:00.000Z"));
+
+    expect(deps.adminMessages[0]?.text).toBe(
+      "🏆 Турнир завершён!\n" +
+      "Победители для выдачи призов:\n" +
+      "победителей нет"
+    );
+    const finalMessage =
+      "🏆 Турнир завершён!\n" +
+      "Финальная таблица зафиксирована — вот победители, которые забрали приз в этом сезоне: победителей нет\n" +
+      "Для получения призов — пишите на админский аккаунт @racedrift_admin";
+    expect(deps.playerMessages.filter((message) => message.text === finalMessage)).toEqual([
+      {
+        chatId: "111",
+        text: finalMessage
+      }
+    ]);
+    expect(deps.adminMessages[0]?.text).not.toContain("zero_tg");
+    expect(finalMessage).not.toContain("ZeroScore");
+  });
+
   test("sends finished top-3 winners to ordinary users when admin bot is not configured", async () => {
     const deps = buildDeps({
       adminTelegramIds: [],

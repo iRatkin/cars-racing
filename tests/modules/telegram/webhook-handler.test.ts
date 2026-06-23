@@ -56,6 +56,53 @@ describe("telegram webhook handler", () => {
     ]);
   });
 
+  test("saves UTM data from a /start deep-link payload", async () => {
+    const fetchImpl: TelegramFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, result: true })
+    }));
+    const usersRepository = createUsersRepositoryStub();
+    const handler = createWebhookHandler({
+      purchasesRepository: createPurchasesRepositoryStub(),
+      usersRepository,
+      telegramOptions: { botToken: "123:test", fetchImpl },
+      miniAppUrl: "https://example.test/miniapp"
+    });
+    const payload = Buffer.from(
+      JSON.stringify({
+        s: "telegram_ads",
+        m: "cpc",
+        c: "june_launch",
+        cn: "creative_1",
+        t: "cars"
+      })
+    ).toString("base64url");
+
+    await handler({
+      update_id: 3,
+      message: {
+        message_id: 11,
+        from: {
+          id: 42,
+          first_name: "Ivan",
+          username: "ivan"
+        },
+        chat: { id: 42 },
+        text: `/start ${payload}`,
+        entities: [{ type: "bot_command", offset: 0, length: 6 }]
+      }
+    });
+
+    expect(usersRepository.setUtmIfNotSet).toHaveBeenCalledWith("42", {
+      utmSource: "telegram_ads",
+      utmMedium: "cpc",
+      utmCampaign: "june_launch",
+      utmContent: "creative_1",
+      utmTerm: "cars"
+    });
+  });
+
   test("sends an explanation when the launch hint button is pressed", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];
     const fetchImpl: TelegramFetch = vi.fn(async (url, init) => {
