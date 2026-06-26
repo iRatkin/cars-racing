@@ -14,6 +14,7 @@ export type ValidatedTelegramInitData = {
   telegramUserId: string;
   user: TelegramUser;
   authDate: number;
+  startParam?: string;
 };
 
 export type ValidateTelegramInitDataOptions = {
@@ -85,6 +86,7 @@ export function validateTelegramInitData(
 
   const user = parseUser(userValue);
   const telegramUserId = normalizeTelegramUserId(user.id);
+  const startParam = params.get("start_param") || undefined;
 
   if (!telegramUserId) {
     throw new TelegramInitDataValidationError(
@@ -96,7 +98,8 @@ export function validateTelegramInitData(
   return {
     telegramUserId,
     user,
-    authDate
+    authDate,
+    startParam
   };
 }
 

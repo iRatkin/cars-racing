@@ -32,6 +32,7 @@ import {
   normalizeNick
 } from "./modules/users/nickname.js";
 import { ensureStarterCarState } from "./modules/users/starter-car.js";
+import { parseUtmPayload } from "./modules/users/utm-payload.js";
 import type { UsersRepository } from "./modules/users/users-repository.js";
 import {
   canStartRace,
@@ -277,6 +278,12 @@ export function buildApp(dependencies: AppDependencies = {}): FastifyInstance {
               ? validated.user.is_premium
               : undefined
         });
+        if (validated.startParam) {
+          const utm = parseUtmPayload(validated.startParam);
+          if (utm) {
+            await userRepo.setUtmIfNotSet(validated.telegramUserId, utm);
+          }
+        }
 
         const starterState = ensureStarterCarState(user);
         const accessToken = await reply.jwtSign(
